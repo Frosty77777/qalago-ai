@@ -1,0 +1,74 @@
+{
+  "recommendations": [
+    {
+      "id": "node/12996721851",
+      "name": "Master Coffee",
+      "category": "cafe",
+      "lat": 51.1034667,
+      "lon": 71.4291709,
+      "distance_m": 1853,
+      "reason": "The OSM category matches the stated interest.",
+      "visit_minutes": 20,
+      "activity": "Consider a break; confirm menus and service on site.",
+      "opening_hours": null,
+      "source": "OpenStreetMap",
+      "source_url": "https://www.openstreetmap.org/node/12996721851",
+      "facts": [
+        "amenity=cafe"
+      ],
+      "walk_minutes": null,
+      "walk_time_source": null,
+      "availability_status": "unknown"
+    },
+    {
+      "id": "node/13125546428",
+      "name": "Coffee Day",
+      "category": "cafe",
+      "lat": 51.1157233,
+      "lon": 71.4334022,
+      "distance_m": 3210,
+      "reason": "The OSM category matches the stated interest.",
+      "visit_minutes": 20,
+      "activity": "Consider a break; confirm menus and service on site.",
+      "opening_hours": null,
+      "source": "OpenStreetMap",
+      "source_url": "https://www.openstreetmap.org/node/13125546428",
+      "facts": [
+        "amenity=cafe",
+        "outdoor_seating=no"
+      ],
+      "walk_minutes": null,
+      "walk_time_source": null,
+      "availability_status": "unknown"
+    },
+    {
+      "id": "node/13125556689",
+      "name": "Coffee BOOM",
+      "category": "cafe",
+      "lat": 51.1163017,
+      "lon": 71.4336184,
+      "distance_m": 3276,
+      "reason": "The OSM category matches the stated interest.",
+      "visit_minutes": 20,
+      "activity": "Consider a break; confirm menus and service on site.",
+      "opening_hours": null,
+      "source": "OpenStreetMap",
+      "source_url": "https://www.openstreetmap.org/node/13125556689",
+      "facts": [
+        "amenity=cafe",
+        "outdoor_seating=no"
+      ],
+      "walk_minutes": null,
+      "walk_time_source": null,
+      "availability_status": "unknown"
+    }
+  ],
+  "route": null,
+  "data_updated_at": "2026-10-19T16:55:45.982890Z",
+  "warnings": [
+    "Distances are straight-line estimates. Walking time and availability are unverified; OSM opening hours may be incomplete.",
+    "Gemini is unavailable or unconfigured: deterministic source-based retrieval was used.",
+    "These are visit options, not a verified itinerary. The time budget caps visits only; travel time has not been calculated."
+  ],
+  "retrieval_debug": null
+}
