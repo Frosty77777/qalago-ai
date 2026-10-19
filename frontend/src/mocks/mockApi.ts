@@ -95,9 +95,8 @@ function recommend(req: RecommendRequest): RecommendResponse {
 
   return {
     recommendations,
-    route: recommendations.length
-      ? { ordered_poi_ids: recommendations.map((r) => r.id), geometry: null, route_minutes: null, is_approximate: true }
-      : null,
+    // Like the real backend (P0): independent visit options, no ordered route.
+    route: null,
     data_updated_at: fixture.collected_at,
     warnings: recommendations.length ? text.warnings : [text.empty],
     retrieval_debug: { demo: true, candidates_in_radius: ranked.length, radius_m: Math.round(maxDistance) },

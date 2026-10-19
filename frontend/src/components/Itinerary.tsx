@@ -14,6 +14,8 @@ export function Itinerary({ stops, route, budgetMinutes, originLabel, onSelect }
   const { t, locale } = useI18n()
   const visitTotal = stops.reduce((sum, s) => sum + s.visit_minutes, 0)
   const approximate = !route || route.is_approximate || !route.geometry
+  // Without a backend route these are independent options, not an ordered walk (see FRONTEND_HANDOFF).
+  if (!route || route.ordered_poi_ids.length < 2) return <VisitOptions stops={stops} budgetMinutes={budgetMinutes} />
 
   return (
     <section aria-labelledby="itinerary-title" data-testid="itinerary" className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -60,6 +62,27 @@ export function Itinerary({ stops, route, budgetMinutes, originLabel, onSelect }
         {approximate && <p>{t('itinerarySchematic')}</p>}
         {route?.route_minutes == null && <p>{t('itineraryTravelNotIncluded')}</p>}
       </div>
+    </section>
+  )
+}
+
+function VisitOptions({ stops, budgetMinutes }: { stops: Recommendation[]; budgetMinutes: number }) {
+  const { t } = useI18n()
+  const visitTotal = stops.reduce((sum, s) => sum + s.visit_minutes, 0)
+  return (
+    <section aria-labelledby="options-title" data-testid="visit-options" className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id="options-title" className="font-display text-base font-bold text-slate-900">
+          {t('optionsTitle')}
+        </h3>
+        <p className="text-xs font-medium text-slate-600">{t('itineraryVisits', { n: visitTotal, m: budgetMinutes })}</p>
+      </div>
+      <div className="mt-2 flex h-2 gap-0.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+        {stops.map((s, i) => (
+          <div key={s.id} className={i % 2 ? 'bg-amber-300' : 'bg-amber-400'} style={{ width: `${(s.visit_minutes / Math.max(budgetMinutes, visitTotal)) * 100}%` }} />
+        ))}
+      </div>
+      <p className="mt-3 text-xs text-slate-600">{t('optionsNote')}</p>
     </section>
   )
 }

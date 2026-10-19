@@ -18,7 +18,7 @@
 | 0:50–1:10 | Click card 2, open the **Source data** block, click the OSM link | "Every card separates facts from suggestions. These are the OSM tags. This link opens the original record. The distance is straight-line, and we say so." |
 | 1:10–1:20 | Point at "Hours not verified" | "No fake 'open now'. If hours can't be verified, we say so." |
 | 1:20–1:40 | Click **Family activity** | "Switch to family with two hours: different constraints, so the places change to parks and playgrounds." |
-| 1:40–1:55 | Point at the itinerary and dashed line | "The mini-itinerary fits the visits into the time budget. The dashed line only shows order. We don't invent walking routes or ETAs." |
+| 1:40–1:55 | Point at the "Visit options" time bar | "The options fit into the time budget: visits add up to under 60 minutes. We don't draw fake walking routes or invent ETAs." |
 | 1:55–2:10 | Language **Қазақша**, then **Русский** | "Kazakh, Russian, English. The same real places, explained in your language." |
 | 2:10–2:25 | Terminal: run the collector, then show the `/docs` Swagger response | "Data is collected automatically from Overpass, deduplicated, and served with source URLs and timestamps." *(Participant A)* |
 | 2:25–2:30 | README / GitHub URL | "QalaGo AI. Code, tests and limitations are on GitHub." |
@@ -32,7 +32,7 @@
 **Slide 3, Demo (85 s, with A).** Follow the video steps 0:20–1:55 live. If the network fails, switch to the recorded video. Don't switch to demo data without saying so.
 
 **Slide 5, Differentiation (55 s).**
-- A time budget instead of a list: visits fit your minutes.
+- A time budget instead of a list: suggested visits fit your minutes.
 - Facts and suggestions are kept visibly separate, and every place links to its OSM source.
 - Honest uncertainty: unverified hours, straight-line distance, schematic routes.
 - Kazakh, Russian and English throughout.

@@ -337,6 +337,11 @@ export default function App() {
           onReplan={replan}
           onShare={share}
           onEmptyAction={onEmptyAction}
+          onEditSearch={() => {
+            if (!isDesktop) setSheet('full')
+            queryRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            queryRef.current?.querySelector('textarea')?.focus({ preventScroll: true })
+          }}
         />
       </section>
       <p className="text-xs leading-relaxed text-slate-500" data-testid="privacy-note">

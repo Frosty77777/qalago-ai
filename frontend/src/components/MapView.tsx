@@ -60,7 +60,7 @@ function FitToResults({ origin, recommendations, bottomInset }: Pick<Props, 'ori
 function FocusSelected({ selected }: { selected: Recommendation | undefined }) {
   const map = useMap()
   useEffect(() => {
-    if (selected) map.flyTo([selected.lat, selected.lon], Math.max(map.getZoom(), 16), { duration: 0.5 })
+    if (selected) map.flyTo([selected.lat, selected.lon], Math.max(map.getZoom(), 15), { duration: 0.5 })
   }, [selected, map])
   return null
 }
@@ -89,7 +89,7 @@ export function MapView({ origin, recommendations, route, selectedId, background
   const routedLine: [number, number][] | null =
     route?.geometry && !route.is_approximate ? route.geometry.coordinates.map(([lon, lat]) => [lat, lon]) : null
   const schematicLine: [number, number][] =
-    routedLine || ordered.length === 0
+    routedLine || !route || route.ordered_poi_ids.length < 2
       ? []
       : [...(origin ? [[origin.lat, origin.lon] as [number, number]] : []), ...ordered.map((r) => [r.lat, r.lon] as [number, number])]
 

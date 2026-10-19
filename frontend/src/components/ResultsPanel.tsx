@@ -24,6 +24,7 @@ interface Props {
   onReplan: (k: ReplanKind) => void
   onShare: () => Promise<boolean>
   onEmptyAction: (a: 'longer' | 'origin' | 'rephrase') => void
+  onEditSearch: () => void
 }
 
 const ERROR_KEYS: Record<ApiError['kind'], StringKey> = {
@@ -122,14 +123,27 @@ export function ResultsPanel(props: Props) {
       ))}
 
       {response.warnings.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-testid="warnings">
-          <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{t('warningsTitle')}</p>
-          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+        <details className="group rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-testid="warnings">
+          <summary className="flex cursor-pointer list-none items-start gap-2">
+            <span aria-hidden="true" className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700">
+              i
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                {t('warningsTitle')} · {response.warnings.length}
+              </span>
+              <span className="block group-open:hidden">{response.warnings[0]}</span>
+            </span>
+            <span aria-hidden="true" className="text-slate-400 transition-transform group-open:rotate-180">
+              ▾
+            </span>
+          </summary>
+          <ul className="mt-1 list-disc space-y-1 pl-9">
             {response.warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {recs.length === 0 ? (
@@ -150,9 +164,14 @@ export function ResultsPanel(props: Props) {
         </div>
       ) : (
         <>
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="font-display text-lg font-bold text-slate-900">{t('resultsTitle')}</h2>
-            <p className="text-xs text-slate-500">{t('resultsCount', { n: recs.length })}</p>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-extrabold tracking-tight text-slate-900">{t('resultsTitle')}</h2>
+              <p className="text-xs text-slate-500">{t('resultsCount', { n: recs.length })}</p>
+            </div>
+            <button type="button" onClick={props.onEditSearch} className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold text-sky-800 hover:bg-sky-50">
+              ↑ {t('editSearch')}
+            </button>
           </div>
 
           {ordered.length > 1 && (

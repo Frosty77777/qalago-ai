@@ -1,6 +1,7 @@
 import type { Recommendation } from '../api/types'
 import { useI18n } from '../i18n/I18nContext'
 import { formatDistance } from '../lib/geo'
+import { CategoryIcon } from './CategoryIcon'
 
 interface Props {
   rec: Recommendation
@@ -21,7 +22,8 @@ function AvailabilityBadge({ rec }: { rec: Recommendation }) {
 
 export function ResultCard({ rec, index, selected, onSelect }: Props) {
   const { t, category, locale } = useI18n()
-  const facts = rec.facts?.filter(Boolean) ?? []
+  // Hours get their own line below, so don't repeat them as a raw tag.
+  const facts = rec.facts?.filter((f) => f && !(rec.opening_hours && f.startsWith('opening_hours='))) ?? []
 
   return (
     <article
@@ -41,7 +43,10 @@ export function ResultCard({ rec, index, selected, onSelect }: Props) {
           {index + 1}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">{category(rec.category)}</p>
+          <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-sky-800 uppercase">
+            <CategoryIcon category={rec.category} className="size-4" />
+            {category(rec.category)}
+          </p>
           <h3 className="font-display text-lg leading-snug font-bold text-slate-900">{rec.name}</h3>
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
             <span className="badge bg-sky-50 text-sky-900 ring-sky-200" title={t('approxDistanceNote')}>
@@ -53,22 +58,23 @@ export function ResultCard({ rec, index, selected, onSelect }: Props) {
         </div>
       </div>
 
-      <dl className="mt-3 space-y-2 text-sm">
-        <div>
-          <dt className="font-semibold text-slate-900">{t('reasonLabel')}</dt>
-          <dd className="text-slate-700">{rec.reason}</dd>
-        </div>
-        <div>
-          <dt className="font-semibold text-slate-900">{t('activityLabel')}</dt>
-          <dd className="text-slate-700">{rec.activity}</dd>
-        </div>
-      </dl>
-      <p className="mt-1 text-xs text-slate-500 italic">{t('generatedNote')}</p>
+      <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-sm">
+        <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-sky-800 uppercase">
+          <span aria-hidden="true">✦</span>
+          {t('generatedNote')}
+        </p>
+        <p className="text-slate-800">
+          <span className="font-semibold text-slate-900">{t('reasonLabel')}:</span> {rec.reason}
+        </p>
+        <p className="mt-1 text-slate-800">
+          <span className="font-semibold text-slate-900">{t('activityLabel')}:</span> {rec.activity}
+        </p>
+      </div>
 
-      <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
-        <p className="font-semibold text-slate-900">{t('factsLabel')}</p>
+      <div className="mt-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+        <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">{t('factsLabel')}</p>
         {facts.length > 0 && (
-          <ul className="mt-1 flex flex-wrap gap-1">
+          <ul className="flex flex-wrap gap-1">
             {facts.map((f) => (
               <li key={f} className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] ring-1 ring-slate-200">
                 {f}
@@ -76,26 +82,26 @@ export function ResultCard({ rec, index, selected, onSelect }: Props) {
             ))}
           </ul>
         )}
-        {rec.opening_hours && <p className="mt-1">{t('osmHours', { h: rec.opening_hours })}</p>}
-        <p className="mt-1">
+        {rec.opening_hours && <p className="mt-1.5">{t('osmHours', { h: rec.opening_hours })}</p>}
+        <p className="mt-1.5 text-slate-500">
           {rec.walk_minutes != null && rec.walk_time_source
             ? t('walkTime', { n: rec.walk_minutes, s: rec.walk_time_source })
             : t('walkUnknown')}
         </p>
-        <p className="mt-1">
-          {rec.source_url ? (
-            <a className="font-medium text-sky-800 underline underline-offset-2 hover:text-sky-950" href={rec.source_url} target="_blank" rel="noreferrer">
-              {t('sourceLink', { s: rec.source })} ↗
-            </a>
-          ) : (
-            t('sourceLink', { s: rec.source })
-          )}
-        </p>
       </div>
 
-      <button type="button" onClick={onSelect} className="btn-secondary mt-3 w-full" aria-pressed={selected}>
-        {t('showOnMap')}
-      </button>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        {rec.source_url ? (
+          <a className="text-sm font-medium text-sky-800 underline underline-offset-2 hover:text-sky-950" href={rec.source_url} target="_blank" rel="noreferrer">
+            {t('sourceLink', { s: rec.source })}&nbsp;↗
+          </a>
+        ) : (
+          <span className="text-sm text-slate-600">{t('sourceLink', { s: rec.source })}</span>
+        )}
+        <button type="button" onClick={onSelect} className="btn-secondary shrink-0" aria-pressed={selected}>
+          <span aria-hidden="true">⌖</span> {t('showOnMap')}
+        </button>
+      </div>
     </article>
   )
 }

@@ -51,8 +51,8 @@ const en = {
   sourceLink: 'Source: {s}',
   showOnMap: 'Show on map',
   stop: 'Stop {n}',
-  reasonLabel: 'Why it fits',
-  activityLabel: 'Suggested activity',
+  reasonLabel: 'Why',
+  activityLabel: 'Try',
   generatedNote: 'AI suggestion based on the source data',
   factsLabel: 'Source data',
   walkTime: '{n} min walk · {s}',
@@ -105,6 +105,9 @@ const en = {
   mapLabel: 'Map of Astana',
   originMarker: 'Starting point',
   approxDistanceNote: 'Distances are straight-line estimates.',
+  optionsTitle: 'Visit options',
+  editSearch: 'Change request',
+  optionsNote: 'These are separate options near you, not an ordered route. Their visits fit your time; travel between them is not counted.',
 }
 
 export type StringKey = keyof typeof en
@@ -160,8 +163,8 @@ const ru: Record<StringKey, string> = {
   sourceLink: 'Источник: {s}',
   showOnMap: 'Показать на карте',
   stop: 'Остановка {n}',
-  reasonLabel: 'Почему подходит',
-  activityLabel: 'Что можно сделать',
+  reasonLabel: 'Почему',
+  activityLabel: 'Что сделать',
   generatedNote: 'Подсказка ИИ на основе данных источника',
   factsLabel: 'Данные источника',
   walkTime: '{n} мин пешком · {s}',
@@ -214,6 +217,9 @@ const ru: Record<StringKey, string> = {
   mapLabel: 'Карта Астаны',
   originMarker: 'Точка старта',
   approxDistanceNote: 'Расстояния указаны по прямой.',
+  optionsTitle: 'Варианты рядом',
+  editSearch: 'Изменить запрос',
+  optionsNote: 'Это отдельные варианты рядом с вами, а не маршрут по порядку. Время на местах укладывается в ваш лимит; дорога между ними не учтена.',
 }
 
 const kk: Record<StringKey, string> = {
@@ -267,7 +273,7 @@ const kk: Record<StringKey, string> = {
   sourceLink: 'Дереккөз: {s}',
   showOnMap: 'Картадан көрсету',
   stop: '{n}-аялдама',
-  reasonLabel: 'Неге сәйкес',
+  reasonLabel: 'Неге',
   activityLabel: 'Не істеуге болады',
   generatedNote: 'Дереккөз деректеріне негізделген ЖИ ұсынысы',
   factsLabel: 'Дереккөз деректері',
@@ -321,6 +327,9 @@ const kk: Record<StringKey, string> = {
   mapLabel: 'Астана картасы',
   originMarker: 'Бастапқы нүкте',
   approxDistanceNote: 'Қашықтықтар түзу сызықпен берілген.',
+  optionsTitle: 'Жақын нұсқалар',
+  editSearch: 'Сұрауды өзгерту',
+  optionsNote: 'Бұл — реттелген маршрут емес, жаныңыздағы жеке нұсқалар. Орындарда болу уақыты лимитке сыяды; арасындағы жол есептелмеген.',
 }
 
 export const STRINGS: Record<Language, Record<StringKey, string>> = { en, ru, kk }
@@ -333,7 +342,7 @@ export const LANGUAGES: { id: Language; label: string }[] = [
 
 /** Category display names. Unknown categories fall back to the raw OSM value. */
 export const CATEGORY_LABELS: Record<Language, Record<string, string>> = {
-  en: { cafe: 'Café', restaurant: 'Restaurant', park: 'Park', garden: 'Garden', playground: 'Playground', museum: 'Museum', attraction: 'Attraction', artwork: 'Artwork', viewpoint: 'Viewpoint', monument: 'Monument', memorial: 'Memorial', library: 'Library', theatre: 'Theatre', gallery: 'Gallery' },
-  ru: { cafe: 'Кафе', restaurant: 'Ресторан', park: 'Парк', garden: 'Сад', playground: 'Детская площадка', museum: 'Музей', attraction: 'Достопримечательность', artwork: 'Арт-объект', viewpoint: 'Смотровая точка', monument: 'Памятник', memorial: 'Мемориал', library: 'Библиотека', theatre: 'Театр', gallery: 'Галерея' },
-  kk: { cafe: 'Кафе', restaurant: 'Мейрамхана', park: 'Саябақ', garden: 'Бақ', playground: 'Балалар алаңы', museum: 'Мұражай', attraction: 'Көрікті орын', artwork: 'Өнер нысаны', viewpoint: 'Көру алаңы', monument: 'Ескерткіш', memorial: 'Мемориал', library: 'Кітапхана', theatre: 'Театр', gallery: 'Галерея' },
+  en: { cafe: 'Café', restaurant: 'Restaurant', park: 'Park', garden: 'Garden', playground: 'Playground', museum: 'Museum', attraction: 'Attraction', artwork: 'Artwork', viewpoint: 'Viewpoint', monument: 'Monument', historic: 'Historic site', memorial: 'Memorial', library: 'Library', theatre: 'Theatre', gallery: 'Gallery' },
+  ru: { cafe: 'Кафе', restaurant: 'Ресторан', park: 'Парк', garden: 'Сад', playground: 'Детская площадка', museum: 'Музей', attraction: 'Достопримечательность', artwork: 'Арт-объект', viewpoint: 'Смотровая точка', monument: 'Памятник', historic: 'Историческое место', memorial: 'Мемориал', library: 'Библиотека', theatre: 'Театр', gallery: 'Галерея' },
+  kk: { cafe: 'Кафе', restaurant: 'Мейрамхана', park: 'Саябақ', garden: 'Бақ', playground: 'Балалар алаңы', museum: 'Мұражай', attraction: 'Көрікті орын', artwork: 'Өнер нысаны', viewpoint: 'Көру алаңы', monument: 'Ескерткіш', historic: 'Тарихи орын', memorial: 'Мемориал', library: 'Кітапхана', theatre: 'Театр', gallery: 'Галерея' },
 }

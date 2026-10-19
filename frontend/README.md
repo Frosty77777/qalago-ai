@@ -34,6 +34,7 @@ npm run dev            # http://localhost:5173
 | `npm run preview` | Serve the production build |
 | `npm run lint` | oxlint |
 | `npm run test:e2e` | Playwright smoke tests (starts the dev server itself; backend is stubbed) |
+| `npm run test:live` | Playwright tests against the **real** backend on :8000 (start it first) |
 | `npm run fixture` | Re-collect the demo snapshot from Overpass into `src/mocks/demoPois.json` |
 
 ### Environment
@@ -61,7 +62,7 @@ Demo data is used only when `VITE_USE_MOCKS=true` or when the user clicks **Use 
 - Distances are always labelled "as the crow flies" (`distance_m` is Haversine).
 - A green "Open now (verified)" badge appears **only** for `availability_status = verified_open`; everything else shows "Hours not verified".
 - Walking time is displayed only when `walk_minutes` *and* `walk_time_source` are present.
-- Multi-stop routes are drawn as a dashed schematic line labelled "not walking routes" unless the backend returns a non-approximate `route.geometry` (GeoJSON LineString), which is drawn solid.
+- With `route: null` (the current backend) results are shown as **visit options**: no order, no connecting line, with a time-budget bar. If a later backend returns `route.ordered_poi_ids`, the UI switches to an ordered mini-itinerary with a dashed schematic line labelled "not walking routes"; a non-approximate `route.geometry` (GeoJSON LineString) is drawn solid.
 - Source facts (`facts`, OSM hours, source link) are visually separated from generated text (`reason`, `activity`, marked "AI suggestion").
 - Scenario notices: flight/airport queries warn that airport travel isn't included (T04); quiet/outlet queries warn those attributes aren't guaranteed (T02); evening queries remind that hours aren't verified (T05).
 - Mode presets (walk, family, friends, date, solo) change the request's `mode` and `preferences`, not just the visuals. Re-plan buttons send real new requests.
