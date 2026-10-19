@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "collected_at": "2026-10-19T16:55:45.982890Z",
+  "source": "OpenStreetMap",
+  "license": "ODbL-1.0",
+  "attribution": "© OpenStreetMap contributors",
+  "query_bbox": [
+    50.99,
+    71.27,
+    51.25,
+    71.6
+  ],
+  "endpoint": "https://overpass-api.de/api/interpreter",
+  "query_sha256": "04feee73d191771160f9f7b1917aaf895571011b502eb9f8c756cb71d714d4ed",
+  "osm_base_timestamp": "2026-10-19T16:54:36Z",
+  "poi_count": 611,
+  "category_counts": {
+    "restaurant": 168,
+    "attraction": 16,
+    "cafe": 325,
+    "artwork": 13,
+    "library": 7,
+    "historic": 36,
+    "museum": 8,
+    "playground": 1,
+    "park": 34,
+    "garden": 3
+  },
+  "element_counts": {
+    "node": 505,
+    "relation": 7,
+    "way": 99
+  },
+  "raw_elements": 614,
+  "duplicates_removed": 3,
+  "notes": [
+    "One bounded automated Overpass query, no manual POI seeding.",
+    "Centres are bounding-box centres, not entrances.",
+    "OSM coverage and attributes may be incomplete."
+  ]
+}
