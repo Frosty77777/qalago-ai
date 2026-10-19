@@ -1,0 +1,124 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Manrope Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-slate-50 font-sans text-slate-900 antialiased;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-sky-700;
+  }
+}
+
+@layer components {
+  .field-label {
+    @apply text-sm font-semibold text-slate-900;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-wait disabled:bg-slate-500;
+  }
+  .btn-secondary {
+    @apply inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 transition-colors hover:border-slate-400 hover:bg-slate-50 disabled:opacity-60 aria-pressed:border-sky-800 aria-pressed:bg-sky-50 aria-pressed:text-sky-950;
+  }
+  .chip {
+    @apply inline-flex min-h-10 items-center rounded-full border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900 aria-pressed:border-slate-900 aria-pressed:bg-slate-900 aria-pressed:text-white;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 font-medium ring-1 ring-inset;
+  }
+  .pill {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap;
+  }
+}
+
+/* Leaflet markers (divIcon HTML) */
+.qg-origin {
+  position: relative;
+  width: 28px;
+  height: 28px;
+}
+.qg-origin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgb(251 191 36 / 0.35);
+  animation: qg-pulse 2s ease-out infinite;
+}
+.qg-origin span {
+  position: absolute;
+  inset: 7px;
+  border-radius: 9999px;
+  background: #f59e0b;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 0.5);
+}
+@keyframes qg-pulse {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qg-origin::before {
+    animation: none;
+  }
+}
+
+.qg-stop {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: #075985;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.45);
+  color: #fff;
+  font: 800 14px/1 'Manrope Variable', sans-serif;
+}
+.qg-stop span {
+  transform: rotate(45deg);
+}
+.qg-stop--selected {
+  width: 42px;
+  height: 42px;
+  background: #0f172a;
+  color: #fcd34d;
+  border-color: #fcd34d;
+  font-size: 17px;
+}
+
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #e2e8f0;
+}
+.leaflet-control-attribution {
+  font-size: 11px;
+}
+
+/* Manrope has no Cyrillic-extended glyphs (ә, ғ, қ, ң, ө, ұ, ү, һ, і); use Inter for Kazakh headings. */
+:root:lang(kk) {
+  --font-display: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (max-width: 767px) {
+  .leaflet-top.leaflet-left .leaflet-control-attribution {
+    margin: 6px 0 0 6px;
+    border-radius: 6px;
+  }
+}
