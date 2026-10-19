@@ -137,7 +137,7 @@ export function MapView({ origin, recommendations, route, selectedId, background
           </CircleMarker>
         ))}
 
-      {routedLine && <Polyline positions={routedLine} pathOptions={{ color: '#0b5f86', weight: 5, opacity: 0.85 }} />}
+      {routedLine && <Polyline positions={routedLine} pathOptions={{ color: '#0b5f86', weight: 5, opacity: 0.85 }} attribution="Route &copy; 2GIS" />}
       {schematicLine.length > 1 && (
         <Polyline positions={schematicLine} pathOptions={{ color: '#0b5f86', weight: 3, opacity: 0.8, dashArray: '2 10', lineCap: 'round' }} />
       )}

@@ -104,3 +104,14 @@ No user accounts, stored request history, analytics, location logs or full promp
 ```
 
 Pytest mocks outbound network/model responses, including a real SDK call against a fake HTTP transport. Test fixtures are explicitly synthetic and never loaded by the application. Actual results and remaining limitations are recorded in `docs/CHECKPOINT.md`. See `docs/limitations.md` for deferred P1 features.
+
+## Optional: 2GIS walking routes
+
+Set `TWOGIS_API_KEY` in `backend/.env` (see `.env.example`; never commit it, never put it in `frontend/`). The service then:
+
+- orders the selected places nearest-first from the origin (greedy, straight-line);
+- asks the 2GIS Routing API (`transport: walking`) for each leg, in parallel, with an 8-second limit (`ROUTING_TIMEOUT_SECONDS`);
+- fills the existing contract fields: `walk_minutes`, `walk_time_source = "2GIS Routing API (walking)"`, `route.ordered_poi_ids`, `route.geometry` (GeoJSON LineString), `route.route_minutes` (total walking), `route.is_approximate = false`;
+- drops trailing stops whose walk + visit would overrun `max_minutes`.
+
+The origin is rounded to 4 decimals (~11 m) before it leaves the server. Any 2GIS failure keeps HTTP 200 and returns the previous unrouted visit options with a warning. Code: `app/routing.py`; tests: `tests/test_routing.py` (mocked HTTP).

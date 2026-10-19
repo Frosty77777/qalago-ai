@@ -254,6 +254,35 @@ test.describe('QalaGo AI smoke', () => {
     await expect(page.getByText('Hours not verified')).toHaveCount(2)
   })
 
+  test('routed response (2GIS) shows walking legs, total time and attribution', async ({ page }) => {
+    await stubApi(page, {
+      recommend: () => {
+        const r = threeStops()
+        const recs = r.recommendations.map((x, i) => ({ ...x, walk_minutes: 6 + i, walk_time_source: '2GIS Routing API (walking)' }))
+        const line = recs.map((x) => [x.lon, x.lat])
+        return {
+          json: {
+            ...r,
+            recommendations: recs,
+            route: { ordered_poi_ids: recs.map((x) => x.id), geometry: { type: 'LineString', coordinates: line }, route_minutes: 21, is_approximate: false },
+          },
+        }
+      },
+    })
+    await setLang(page, 'en')
+    await page.goto('/')
+    await page.getByTestId('origin-expo').click()
+    await page.getByLabel('What would you like to do?').fill('walk')
+    await page.getByTestId('search-submit').click()
+    const it = page.getByTestId('itinerary')
+    await expect(it).toContainText('Walking route')
+    await expect(it.getByTestId('walk-leg')).toHaveCount(3)
+    await expect(page.getByTestId('itinerary-total')).toHaveText('Total ~96 of 60 min')
+    await expect(it).toContainText('© 2GIS')
+    await expect(it).not.toContainText('not walking routes')
+    await expect(page.getByTestId('result-card').first()).toContainText('6 min walk · 2GIS Routing API (walking)')
+  })
+
   test('re-plan buttons send real new queries', async ({ page }) => {
     const requests = await stubApi(page)
     await setLang(page, 'en')

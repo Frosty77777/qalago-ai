@@ -3,8 +3,9 @@ from datetime import timedelta
 from .config import Settings
 from .grounding import Grounder, ModelChoice
 from .language import MESSAGES
-from .models import RecommendRequest, RecommendResponse, Recommendation, utc_now
+from .models import RecommendRequest, RecommendResponse, Recommendation, Route, utc_now
 from .retrieval import Retriever, ATTRIBUTE_TERMS, TIME_TERMS, AIRPORT_TERMS, contains, normalize_text, source_facts
+from .routing import SOURCE, WalkingRouter
 from .store import POIStore
 
 DEFAULT_VISITS = {"cafe": 20, "restaurant": 30, "park": 20, "garden": 20,
@@ -17,8 +18,9 @@ DEFAULT_ACTIVITIES = {"cafe": "break", "restaurant": "break", "library": "read",
 
 
 class RecommendationService:
-    def __init__(self, store: POIStore, settings: Settings, grounder: Grounder):
+    def __init__(self, store: POIStore, settings: Settings, grounder: Grounder, router: WalkingRouter | None = None):
         self.store, self.settings, self.grounder = store, settings, grounder
+        self.router = router or WalkingRouter(settings)
         self.retriever = Retriever(store, settings)
 
     async def recommend(self, request: RecommendRequest) -> RecommendResponse:
@@ -63,7 +65,11 @@ class RecommendationService:
                 reason=messages[choice.reason_code], activity=messages[choice.activity_code],
                 visit_minutes=choice.visit_minutes, opening_hours=p.opening_hours,
                 source_url=p.source_url, facts=source_facts(p)))
-        warnings.append(messages["alternatives"])
+        route = None
+        if self.router.enabled:
+            recommendations, route = await self._route(request, recommendations, warnings, messages)
+        if route is None:
+            warnings.append(messages["alternatives"])
         if any(selected[c.poi_id].poi.coordinate_kind == "bounding_box_center" for c in choices):
             warnings.append(messages["center"])
         debug = None
@@ -73,6 +79,32 @@ class RecommendationService:
                       "category_score": c.category_score,
                       "distance_score": round(c.distance_score, 5),
                       "matched_tags": source_facts(c.poi)} for c in candidates]
-        # Multiple recommendations are options. No route/ETA is fabricated.
-        return RecommendResponse(recommendations=recommendations, route=None,
+        # Without a routing provider, multiple recommendations are options. No route/ETA is fabricated.
+        return RecommendResponse(recommendations=recommendations, route=route,
                                  data_updated_at=updated, warnings=warnings, retrieval_debug=debug)
+
+    async def _route(self, request, recommendations, warnings, messages):
+        """Order stops nearest-first and attach 2GIS walking times; drop trailing stops that overrun the budget."""
+        plan = await self.router.plan((request.lat, request.lon), [(r.lat, r.lon) for r in recommendations])
+        if plan is None:
+            warnings.append(messages["routing_failed"])
+            return recommendations, None
+        ordered = [recommendations[i] for i in plan.order]
+        keep, used = 0, 0
+        for rec, leg in zip(ordered, plan.legs):
+            if keep and used + leg.minutes + rec.visit_minutes > request.max_minutes:
+                break
+            used += leg.minutes + rec.visit_minutes
+            keep += 1
+        if used > request.max_minutes:
+            warnings.append(messages["over_budget"])
+        legs = plan.legs[:keep]
+        routed = [r.model_copy(update={"walk_minutes": leg.minutes, "walk_time_source": SOURCE})
+                  for r, leg in zip(ordered[:keep], legs)]
+        trimmed = type(plan)(plan.order[:keep], legs)
+        warnings[0] = messages["base_routed"]
+        warnings.append(messages["routed"])
+        geometry = trimmed.geometry()
+        return routed, Route(ordered_poi_ids=[r.id for r in routed],
+                             geometry=geometry if len(geometry["coordinates"]) >= 2 else None,
+                             route_minutes=trimmed.walk_minutes, is_approximate=False)

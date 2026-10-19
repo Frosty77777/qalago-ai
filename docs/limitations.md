@@ -11,9 +11,9 @@ Participant B wrote the frontend sections. Participant A should complete or corr
 
 ## Distances and time
 - `distance_m` is a straight-line (Haversine) distance. The UI always labels it "as the crow flies".
-- Walking time is shown only if the backend uses a real pedestrian-routing provider and names it. Otherwise it reads "Walking time not estimated".
-- Multi-stop connections on the map are schematic dashed lines and are labelled as not being walking routes.
-- The time budget counts visit minutes only. Users are told to leave a margin for travel. Airport travel and check-in are never included (T04).
+- Walking times and route lines come from the **2GIS Routing API** (pedestrian) when `TWOGIS_API_KEY` is set on the backend. Stops are ordered nearest-first (greedy, not an optimal tour), the return trip is not included, and trailing stops that would overrun the time budget are dropped. Without the key, or if 2GIS fails, the app falls back to unrouted visit options, and the UI reads "Walking time not estimated".
+- With routing, the time budget counts 2GIS walking minutes plus visit minutes. Without routing it counts visit minutes only, and users are told to leave a margin for travel. Airport travel and check-in are never included (T04).
+- Card distances stay straight-line even when routed; the walking time next to them is the 2GIS figure.
 
 ## AI-generated text
 - `reason` and `activity` are generated suggestions, grounded in retrieved POIs and marked "AI suggestion". Source facts appear in a separate "Source data" block.
@@ -26,11 +26,12 @@ Participant B wrote the frontend sections. Participant A should complete or corr
 ## Privacy
 - Geolocation is requested only when the user clicks **Use my location**. Clicking the map and the three area presets work without it.
 - Coordinates are sent with the recommendation request only (rounded to 5 decimals, about 1 m). The frontend never stores them. Only the UI language is kept in `localStorage`.
+- With routing enabled, the backend sends the origin **rounded to 4 decimals (about 11 m)** and the stop coordinates to 2GIS to compute walking routes. Gemini still never receives coordinates. The 2GIS key stays server-side in `backend/.env`.
 - Share links contain the query, duration, mode, language and a *preset* area ID, never coordinates.
 - No API keys exist in the frontend. Gemini is called server-side only.
 - *(Backend)* No coordinates or full query text in server logs. → Participant A to confirm.
 
 ## Not built (honest scope)
-- No real pedestrian routing, live weather, user accounts, reviews or photos.
+- No live weather, user accounts, reviews or photos. Routing is pedestrian only and needs a 2GIS key.
 - No offline maps or tile caching.
 - Business model and partnerships are ideas only. There is no traction or partner agreement.

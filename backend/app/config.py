@@ -28,6 +28,8 @@ class Settings:
     stale_days: float = 14
     debug: bool = False
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
+    twogis_key: str = field(default="", repr=False)
+    routing_timeout: float = 8
 
     def __post_init__(self):
         if self.data_path.resolve() == self.db_path.resolve():
@@ -56,4 +58,6 @@ class Settings:
             debug=os.getenv("RETRIEVAL_DEBUG", "false").lower() == "true",
             cors_origins=tuple(x.strip() for x in os.getenv("CORS_ORIGINS",
                 "http://localhost:5173,http://127.0.0.1:5173").split(",") if x.strip()),
+            twogis_key=os.getenv("TWOGIS_API_KEY", "").strip(),
+            routing_timeout=_number("ROUTING_TIMEOUT_SECONDS", 8, .5, 20),
         )

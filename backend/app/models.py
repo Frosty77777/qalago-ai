@@ -127,16 +127,17 @@ class Recommendation(BaseModel):
     source: Literal["OpenStreetMap"] = "OpenStreetMap"
     source_url: str
     facts: list[str]
-    walk_minutes: None = None
-    walk_time_source: None = None
+    # Filled only from a pedestrian routing provider (2GIS); never estimated locally.
+    walk_minutes: int | None = Field(default=None, ge=0)
+    walk_time_source: str | None = None
     availability_status: Literal["unknown"] = "unknown"
 
 
 class Route(BaseModel):
     ordered_poi_ids: list[str]
-    geometry: None = None
-    route_minutes: None = None
-    is_approximate: Literal[True] = True
+    geometry: dict | None = None
+    route_minutes: int | None = None
+    is_approximate: bool = True
 
 
 class RecommendResponse(BaseModel):

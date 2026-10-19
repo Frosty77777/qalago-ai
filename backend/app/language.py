@@ -2,6 +2,10 @@
 MESSAGES = {
     "ru": {
         "base": "Расстояния указаны по прямой. Время пешего пути и доступность не проверены; часы работы из OSM могут быть неполными.",
+        "routed": "Порядок — ближайшее место первым. Время пешком и линия маршрута — от 2GIS; обратная дорога не учтена.",
+        "base_routed": "Расстояния на карточках указаны по прямой; время пешком рассчитано 2GIS. Часы работы из OSM могут быть неполными.",
+        "routing_failed": "Сервис маршрутов 2GIS недоступен: показаны варианты без времени в пути.",
+        "over_budget": "Даже ближайшее место с дорогой не укладывается в выбранное время.",
         "alternatives": "Это варианты посещения, а не проверенный маршрут. Бюджет ограничивает сумму посещений; время дороги в него не рассчитано.",
         "no_results": "Подходящих мест в радиусе поиска нет. Выберите другую точку на карте или измените категорию; радиус может увеличить администратор.",
         "no_data": "Данные OSM ещё не загружены или недоступны. Запустите сбор POI и перезапустите backend.",
@@ -22,6 +26,10 @@ MESSAGES = {
     },
     "kk": {
         "base": "Қашықтық түзу сызықпен есептелген. Жаяу жүру уақыты мен қолжетімділік тексерілмеген; OSM жұмыс уақыты толық болмауы мүмкін.",
+        "routed": "Реті — ең жақын орын бірінші. Жаяу жүру уақыты мен маршрут сызығы 2GIS-тен; кері жол есептелмеген.",
+        "base_routed": "Карточкалардағы қашықтық түзу сызықпен; жаяу жүру уақытын 2GIS есептеді. OSM жұмыс уақыты толық болмауы мүмкін.",
+        "routing_failed": "2GIS маршрут қызметі қолжетімсіз: жол уақытынсыз нұсқалар көрсетілді.",
+        "over_budget": "Ең жақын орын да жолымен бірге таңдалған уақытқа сыймайды.",
         "alternatives": "Бұл — бару нұсқалары, тексерілген маршрут емес. Уақыт шегі тек орындарға баруды қамтиды; жол уақыты есептелмеген.",
         "no_results": "Іздеу радиусында сәйкес орын жоқ. Картадағы нүктені не санатты өзгертіңіз; радиусты әкімші кеңейте алады.",
         "no_data": "OSM деректері жүктелмеген не қолжетімсіз. POI жинауды іске қосып, backend-ті қайта бастаңыз.",
@@ -42,6 +50,10 @@ MESSAGES = {
     },
     "en": {
         "base": "Distances are straight-line estimates. Walking time and availability are unverified; OSM opening hours may be incomplete.",
+        "routed": "Order is nearest-first. Walking times and the route line come from 2GIS; the return trip is not included.",
+        "base_routed": "Card distances are straight-line; walking times are calculated by 2GIS. OSM opening hours may be incomplete.",
+        "routing_failed": "The 2GIS routing service is unavailable: showing options without travel time.",
+        "over_budget": "Even the nearest place does not fit the chosen time once walking is included.",
         "alternatives": "These are visit options, not a verified itinerary. The time budget caps visits only; travel time has not been calculated.",
         "no_results": "No relevant places within the search radius. Move the map origin or change category; an administrator can increase the search radius.",
         "no_data": "OSM data has not been collected or is unavailable. Run the collector and restart the backend.",

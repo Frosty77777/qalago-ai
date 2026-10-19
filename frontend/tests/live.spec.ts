@@ -36,6 +36,8 @@ test.describe('live backend', () => {
       await expect(page.getByText(/Open now/)).toHaveCount(0)
       await expect(cards.first()).toContainText('as the crow flies')
       await expect(page.getByTestId('demo-badge')).toHaveCount(0)
+      // With TWOGIS_API_KEY on the backend, walking legs must carry the 2GIS credit.
+      if (await page.getByTestId('walk-leg').count()) await expect(page.getByTestId('itinerary')).toContainText('© 2GIS')
     })
   }
 

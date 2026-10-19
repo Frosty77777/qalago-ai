@@ -107,6 +107,13 @@ const en = {
   approxDistanceNote: 'Distances are straight-line estimates.',
   optionsTitle: 'Visit options',
   editSearch: 'Change request',
+  routeTitle: 'Walking route',
+  itineraryTotal: 'Total ~{n} of {m} min',
+  legendWalk: 'walking {n} min',
+  legendVisit: 'visits {n} min',
+  walkLeg: '{n} min walk',
+  routeNote: 'Nearest place first. The return trip is not included.',
+  routeAttribution: 'Walking route and times: © 2GIS',
   optionsNote: 'These are separate options near you, not an ordered route. Their visits fit your time; travel between them is not counted.',
 }
 
@@ -219,6 +226,13 @@ const ru: Record<StringKey, string> = {
   approxDistanceNote: 'Расстояния указаны по прямой.',
   optionsTitle: 'Варианты рядом',
   editSearch: 'Изменить запрос',
+  routeTitle: 'Пеший маршрут',
+  itineraryTotal: 'Всего ~{n} из {m} мин',
+  legendWalk: 'пешком {n} мин',
+  legendVisit: 'на местах {n} мин',
+  walkLeg: '{n} мин пешком',
+  routeNote: 'Сначала ближайшее место. Обратная дорога не учтена.',
+  routeAttribution: 'Маршрут и время пешком: © 2GIS',
   optionsNote: 'Это отдельные варианты рядом с вами, а не маршрут по порядку. Время на местах укладывается в ваш лимит; дорога между ними не учтена.',
 }
 
@@ -329,6 +343,13 @@ const kk: Record<StringKey, string> = {
   approxDistanceNote: 'Қашықтықтар түзу сызықпен берілген.',
   optionsTitle: 'Жақын нұсқалар',
   editSearch: 'Сұрауды өзгерту',
+  routeTitle: 'Жаяу маршрут',
+  itineraryTotal: 'Барлығы ~{n} / {m} мин',
+  legendWalk: 'жаяу {n} мин',
+  legendVisit: 'орындарда {n} мин',
+  walkLeg: 'жаяу {n} мин',
+  routeNote: 'Алдымен ең жақын орын. Кері жол есептелмеген.',
+  routeAttribution: 'Маршрут пен жаяу жүру уақыты: © 2GIS',
   optionsNote: 'Бұл — реттелген маршрут емес, жаныңыздағы жеке нұсқалар. Орындарда болу уақыты лимитке сыяды; арасындағы жол есептелмеген.',
 }
 

@@ -174,7 +174,7 @@ export function ResultsPanel(props: Props) {
             </button>
           </div>
 
-          {ordered.length > 1 && (
+          {(ordered.length > 1 || (response.route != null && !response.route.is_approximate)) && (
             <Itinerary stops={ordered} route={response.route} budgetMinutes={props.budgetMinutes} originLabel={props.originLabel} onSelect={props.onSelect} />
           )}
 
