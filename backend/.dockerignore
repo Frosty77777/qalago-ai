@@ -1,0 +1,15 @@
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.work/
+tests/
+scripts/
+docs/
+data/*.sqlite*
+data/overpass_cache/
+*.zip
+*.log

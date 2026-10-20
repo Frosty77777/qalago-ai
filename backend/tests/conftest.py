@@ -32,7 +32,8 @@ def deny_real_http(monkeypatch):
 
 @pytest.fixture
 def config(tmp_path):
-    return Settings(data_path=tmp_path/"pois.json", db_path=tmp_path/"pois.sqlite3", api_key="")
+    return Settings(data_path=tmp_path/"pois.json", db_path=tmp_path/"pois.sqlite3", api_key="",
+                    app_db_path=tmp_path/"app.sqlite3")
 
 
 @pytest.fixture

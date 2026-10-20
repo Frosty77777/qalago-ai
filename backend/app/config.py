@@ -30,6 +30,16 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
     twogis_key: str = field(default="", repr=False)
     routing_timeout: float = 8
+    # Browser-side 2GIS MapGL key. Public by design: restrict it to your domains in the 2GIS Platform Manager.
+    twogis_map_key: str = ""
+    twogis_city_slug: str = "astana"
+    google_client_id: str = ""
+    app_db_path: Path = ROOT / "data/app.sqlite3"
+    session_days: float = 30
+    cookie_secure: bool = False
+    trust_proxy: bool = False
+    plan_rate_per_minute: int = 30
+    auth_rate_per_minute: int = 10
 
     def __post_init__(self):
         if self.data_path.resolve() == self.db_path.resolve():
@@ -60,4 +70,13 @@ class Settings:
                 "http://localhost:5173,http://127.0.0.1:5173").split(",") if x.strip()),
             twogis_key=os.getenv("TWOGIS_API_KEY", "").strip(),
             routing_timeout=_number("ROUTING_TIMEOUT_SECONDS", 8, .5, 20),
+            twogis_map_key=os.getenv("TWOGIS_MAP_KEY", "").strip(),
+            twogis_city_slug=os.getenv("TWOGIS_CITY_SLUG", "astana").strip() or "astana",
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID", "").strip(),
+            app_db_path=path("APP_DB_PATH", "data/app.sqlite3"),
+            session_days=_number("SESSION_TTL_DAYS", 30, .01, 365),
+            cookie_secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+            trust_proxy=os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true",
+            plan_rate_per_minute=int(_number("RATE_LIMIT_PLAN_PER_MINUTE", 30, 1, 10000)),
+            auth_rate_per_minute=int(_number("RATE_LIMIT_AUTH_PER_MINUTE", 10, 1, 10000)),
         )

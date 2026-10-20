@@ -1,39 +1,26 @@
 import { useState } from 'react'
 import { ApiError } from '../api/client'
-import type { RecommendResponse } from '../api/types'
+import type { IntentId, Place, PlanResponse, Suggestion } from '../api/types'
 import { useI18n } from '../i18n/I18nContext'
+import { errorMessage } from '../lib/errors'
+import { formatDistance } from '../lib/geo'
 import type { StringKey } from '../i18n/strings'
-import { Itinerary } from './Itinerary'
-import { ResultCard } from './ResultCard'
-
-export type ReplanKind = 'nature' | 'shorter' | 'indoors'
+import { RouteCard } from './RouteCard'
 
 interface Props {
   status: 'idle' | 'loading' | 'success' | 'error'
-  response: RecommendResponse | null
+  response: PlanResponse | null
   error: ApiError | null
-  apiBaseUrl: string
   selectedId: string | null
-  budgetMinutes: number
-  originLabel: string
-  notices: StringKey[]
-  canUseDemo: boolean
+  /** "Another route" outcome shown above the current cards. */
+  anotherState: 'idle' | 'loading' | 'exhausted' | 'error'
+  anotherError: ApiError | null
   onSelect: (id: string) => void
+  onAnother: () => void
   onRetry: () => void
-  onUseDemo: () => void
-  onReplan: (k: ReplanKind) => void
+  onChoice: (c: IntentId) => void
+  onSuggestion: (s: Suggestion) => void
   onShare: () => Promise<boolean>
-  onEmptyAction: (a: 'longer' | 'origin' | 'rephrase') => void
-  onEditSearch: () => void
-}
-
-const ERROR_KEYS: Record<ApiError['kind'], StringKey> = {
-  network: 'errorNetwork',
-  timeout: 'errorTimeout',
-  validation: 'errorValidation',
-  unavailable: 'errorUnavailable',
-  server: 'errorServer',
-  bad_response: 'errorBadResponse',
 }
 
 function Skeleton() {
@@ -41,23 +28,56 @@ function Skeleton() {
     <div className="space-y-3" aria-hidden="true">
       {[0, 1, 2].map((i) => (
         <div key={i} className="animate-pulse rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="h-3 w-20 rounded bg-slate-200" />
-          <div className="mt-2 h-5 w-2/3 rounded bg-slate-200" />
-          <div className="mt-3 flex gap-2">
-            <div className="h-5 w-24 rounded-full bg-slate-100" />
-            <div className="h-5 w-20 rounded-full bg-slate-100" />
-          </div>
-          <div className="mt-3 h-3 w-full rounded bg-slate-100" />
-          <div className="mt-1.5 h-3 w-5/6 rounded bg-slate-100" />
+          <div className="h-5 w-2/3 rounded bg-slate-200" />
+          <div className="mt-3 h-4 w-1/2 rounded bg-slate-100" />
+          <div className="mt-3 h-12 w-full rounded-xl bg-slate-100" />
         </div>
       ))}
     </div>
   )
 }
 
+function PlaceCard({ place }: { place: Place }) {
+  const { t, category, locale } = useI18n()
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 text-sm shadow-sm" data-testid="place-card">
+      <h3 className="font-display text-base font-bold break-words text-slate-900">{place.name}</h3>
+      <p className="text-xs text-slate-600">
+        {place.rubric ?? category(place.category)}
+        {place.address && ` · ${place.address}`}
+      </p>
+      <p className="mt-2 flex flex-wrap gap-1.5 text-xs">
+        <span className="badge bg-slate-100 text-slate-800 ring-slate-300">{t('straightLine', { d: formatDistance(place.straight_distance_m, locale) })}</span>
+        <span className="badge bg-white text-slate-800 ring-slate-200">
+          {place.rating != null ? t('rating', { r: place.rating.toFixed(1), c: place.review_count }) : t('noRating')}
+        </span>
+        <span className="badge bg-white text-slate-800 ring-slate-200">
+          {place.hours_status === 'open' ? (place.closes_at ? t('hours_open', { t: place.closes_at }) : t('hours_open_nt')) : t('hours_unknown')}
+        </span>
+      </p>
+      <a className="mt-2 inline-block text-xs font-medium text-sky-800 underline underline-offset-2" href={place.source_url} target="_blank" rel="noreferrer">
+        {t('openIn2gis')}&nbsp;↗
+      </a>
+    </article>
+  )
+}
+
+function Suggestions({ items, onSuggestion }: { items: Suggestion[]; onSuggestion: (s: Suggestion) => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map((s) => (
+        <button key={s} type="button" className="chip" onClick={() => onSuggestion(s)} data-testid={`suggestion-${s}`}>
+          {t(`suggestion_${s}`)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function ResultsPanel(props: Props) {
-  const { t, formatDate } = useI18n()
-  const { status, response, error, selectedId, notices } = props
+  const { t, category } = useI18n()
+  const { status, response, error, selectedId } = props
   const [copied, setCopied] = useState(false)
 
   if (status === 'idle') {
@@ -81,157 +101,146 @@ export function ResultsPanel(props: Props) {
   if (status === 'error' && error) {
     return (
       <div role="alert" data-testid="error-state" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950">
-        <p className="font-semibold">{t(ERROR_KEYS[error.kind], { url: props.apiBaseUrl })}</p>
-        {error.details && error.details.length > 0 && (
-          <ul className="mt-2 list-disc pl-5 text-xs">
-            {error.details.map((d) => (
-              <li key={d}>{d}</li>
-            ))}
-          </ul>
+        <p className="font-semibold">{errorMessage(t, error)}</p>
+        {error.kind !== 'validation' && error.kind !== 'not_configured' && (
+          <button type="button" className="btn-secondary mt-3" onClick={props.onRetry}>
+            {t('retry')}
+          </button>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {error.kind !== 'validation' && (
-            <button type="button" className="btn-secondary" onClick={props.onRetry}>
-              {t('retry')}
-            </button>
-          )}
-          {props.canUseDemo && error.kind !== 'validation' && (
-            <button type="button" className="btn-secondary" onClick={props.onUseDemo} data-testid="use-demo">
-              {t('useDemo')}
-            </button>
-          )}
-        </div>
       </div>
     )
   }
 
   if (!response) return null
-  const recs = response.recommendations
-  const ordered = response.route?.ordered_poi_ids.length
-    ? [
-        ...response.route.ordered_poi_ids.map((id) => recs.find((r) => r.id === id)).filter((r) => r !== undefined),
-        ...recs.filter((r) => !response.route?.ordered_poi_ids.includes(r.id)),
-      ]
-    : recs
+  const interp = response.interpretation
+
+  if (response.status === 'clarify') {
+    return (
+      <section className="rounded-2xl border border-sky-200 bg-white p-4" data-testid="clarify" aria-labelledby="clarify-title">
+        <h2 id="clarify-title" className="font-display text-base font-bold text-slate-900">
+          {t('clarifyTitle')}
+        </h2>
+        <p className="mt-1 text-sm text-slate-700">{response.question}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {response.choices.map((c) => (
+            <button key={c} type="button" className="chip" onClick={() => props.onChoice(c)} data-testid={`choice-${c}`}>
+              {category(c)}
+            </button>
+          ))}
+        </div>
+      </section>
+    )
+  }
 
   return (
     <div className="space-y-3" aria-live="polite">
-      {notices.map((n) => (
-        <p key={n} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid={`notice-${n}`}>
-          {t(n)}
+      {interp && (
+        <p className="text-xs text-slate-600" data-testid="interpretation">
+          {t('interpretedAs', { c: interp.categories.map((c) => (c === 'place' && interp.free_text ? `«${interp.free_text}»` : category(c))).join(' + ') })}
+          {' · '}
+          {t(`transport_${interp.transport}`)} · {t('budgetLabel', { n: interp.budget_minutes })}
         </p>
-      ))}
-
-      {response.warnings.length > 0 && (
-        <details className="group rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-testid="warnings">
-          <summary className="flex cursor-pointer list-none items-start gap-2">
-            <span aria-hidden="true" className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700">
-              i
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                {t('warningsTitle')} · {response.warnings.length}
-              </span>
-              <span className="block group-open:hidden">{response.warnings[0]}</span>
-            </span>
-            <span aria-hidden="true" className="text-slate-400 transition-transform group-open:rotate-180">
-              ▾
-            </span>
-          </summary>
-          <ul className="mt-1 list-disc space-y-1 pl-9">
-            {response.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </details>
       )}
 
-      {recs.length === 0 ? (
+      {response.status === 'routing_unavailable' ? (
+        <div className="space-y-3" data-testid="routing-unavailable">
+          <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            {t('routingDown', {
+              reason: t(
+                (['rate_limited', 'key_rejected', 'unavailable'].includes(response.routing_error?.kind ?? '')
+                  ? `routingReason_${response.routing_error?.kind}`
+                  : 'routingReason_other') as StringKey,
+              ),
+            })}
+          </p>
+          {response.places.map((p) => (
+            <PlaceCard key={p.id} place={p} />
+          ))}
+          <button type="button" className="btn-secondary w-full" onClick={props.onRetry}>
+            {t('retry')}
+          </button>
+        </div>
+      ) : response.status === 'empty' ? (
         <div data-testid="empty-state" className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="font-display text-base font-bold text-slate-900">{t('emptyTitle')}</p>
-          <p className="mt-1 text-sm text-slate-600">{t('emptyHint')}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" className="chip" onClick={() => props.onEmptyAction('longer')}>
-              {t('emptyLonger')}
-            </button>
-            <button type="button" className="chip" onClick={() => props.onEmptyAction('origin')}>
-              {t('emptyOtherOrigin')}
-            </button>
-            <button type="button" className="chip" onClick={() => props.onEmptyAction('rephrase')}>
-              {t('emptyRephrase')}
-            </button>
-          </div>
+          <p className="mt-1 text-sm text-slate-600">{t('emptyBody')}</p>
+          <Suggestions items={response.suggestions} onSuggestion={props.onSuggestion} />
         </div>
       ) : (
         <>
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="font-display text-xl font-extrabold tracking-tight text-slate-900">{t('resultsTitle')}</h2>
-              <p className="text-xs text-slate-500">{t('resultsCount', { n: recs.length })}</p>
+              <p className="text-xs text-slate-500">{t('resultsCount', { n: response.options.length })}</p>
             </div>
-            <button type="button" onClick={props.onEditSearch} className="shrink-0 rounded-lg px-2 py-1 text-sm font-semibold text-sky-800 hover:bg-sky-50">
-              ↑ {t('editSearch')}
-            </button>
           </div>
 
-          {(ordered.length > 1 || (response.route != null && !response.route.is_approximate)) && (
-            <Itinerary stops={ordered} route={response.route} budgetMinutes={props.budgetMinutes} originLabel={props.originLabel} onSelect={props.onSelect} />
+          <button
+            type="button"
+            className="btn-primary w-full"
+            onClick={props.onAnother}
+            disabled={props.anotherState === 'loading'}
+            aria-busy={props.anotherState === 'loading'}
+            data-testid="another-route"
+          >
+            <span aria-hidden="true">↻</span> {props.anotherState === 'loading' ? t('anotherRouteLoading') : t('anotherRoute')}
+          </button>
+          {props.anotherState === 'exhausted' && (
+            <div role="status" data-testid="exhausted" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <p className="font-semibold">{t('exhaustedTitle')}</p>
+              <p className="mt-1">{t('exhaustedBody')}</p>
+              <Suggestions items={response.suggestions} onSuggestion={props.onSuggestion} />
+            </div>
+          )}
+          {props.anotherState === 'error' && props.anotherError && (
+            <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-950">
+              {errorMessage(t, props.anotherError)}
+            </p>
           )}
 
           <ol className="space-y-3">
-            {ordered.map((r, i) => (
-              <li key={r.id}>
-                <ResultCard rec={r} index={i} selected={r.id === selectedId} onSelect={() => props.onSelect(r.id)} />
+            {response.options.map((option, i) => (
+              <li key={option.id}>
+                <RouteCard option={option} index={i} selected={option.id === selectedId} onSelect={() => props.onSelect(option.id)} />
               </li>
             ))}
           </ol>
-
-          <section aria-labelledby="replan-title" className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 id="replan-title" className="text-sm font-semibold text-slate-900">
-              {t('replanTitle')}
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" className="chip" onClick={() => props.onReplan('nature')} data-testid="replan-nature">
-                {t('replanNature')}
-              </button>
-              <button type="button" className="chip" onClick={() => props.onReplan('shorter')} data-testid="replan-shorter">
-                {t('replanShorter')}
-              </button>
-              <button type="button" className="chip" onClick={() => props.onReplan('indoors')} data-testid="replan-indoors">
-                {t('replanIndoors')}
-              </button>
-            </div>
-            <button
-              type="button"
-              className="btn-secondary mt-3 w-full"
-              onClick={async () => {
-                if (await props.onShare()) {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 2000)
-                }
-              }}
-            >
-              {copied ? t('copied') : t('share')}
-            </button>
-            <p className="mt-1 text-xs text-slate-500">{t('shareNote')}</p>
-          </section>
         </>
       )}
 
-      <details className="group rounded-2xl border border-slate-200 bg-white p-4 text-sm" data-testid="evidence">
-        <summary className="cursor-pointer font-semibold text-slate-900">{t('evidenceTitle')}</summary>
-        <p className="mt-2 text-slate-700">{t('evidenceBody')}</p>
-        {response.retrieval_debug != null && (
-          <>
-            <p className="mt-3 text-xs font-semibold text-slate-500 uppercase">{t('retrievalDebug')}</p>
-            <pre className="mt-1 max-h-48 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] text-slate-100">
-              {typeof response.retrieval_debug === 'string' ? response.retrieval_debug : JSON.stringify(response.retrieval_debug, null, 2)}
-            </pre>
-          </>
-        )}
-      </details>
-
-      {response.data_updated_at && <p className="text-xs text-slate-500">{t('dataUpdated', { d: formatDate(response.data_updated_at) })}</p>}
+      {response.notices.length > 0 && (
+        <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-testid="notices">
+          <summary className="cursor-pointer font-semibold text-slate-800">
+            {t('noticesTitle')} · {response.notices.length}
+          </summary>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {response.notices.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {response.ranking_note && (
+        <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <summary className="cursor-pointer font-semibold text-slate-800">{t('howRanked')}</summary>
+          <p className="mt-1">{response.ranking_note}</p>
+        </details>
+      )}
+      {response.options.length > 0 && (
+        <button
+          type="button"
+          className="btn-secondary w-full"
+          onClick={async () => {
+            if (await props.onShare()) {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 2000)
+            }
+          }}
+        >
+          {copied ? t('copied') : t('share')}
+        </button>
+      )}
+      <p className="text-xs text-slate-500">{t('attribution')}</p>
     </div>
   )
 }

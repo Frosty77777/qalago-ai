@@ -18,11 +18,14 @@ export default defineConfig({
     // which stalls Playwright's stability checks. Software rendering keeps them at 60 fps.
     launchOptions: { args: ['--disable-gpu'] },
   },
-  projects: [{ name: 'desktop', use: { ...devices['Desktop Chrome'], channel: channel || undefined, viewport: { width: 1440, height: 900 } } }],
+  projects: [
+    { name: 'desktop', use: { ...devices['Desktop Chrome'], channel: channel || undefined, viewport: { width: 1440, height: 900 } } },
+    { name: 'mobile', use: { ...devices['Pixel 7'], channel: channel || undefined } },
+    { name: 'small-phone', use: { ...devices['iPhone SE'], browserName: 'chromium', channel: channel || undefined }, grep: /mobile layout/ },
+  ],
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: true,
-    env: { VITE_API_BASE_URL: 'http://localhost:8000', VITE_USE_MOCKS: 'false' },
   },
 })

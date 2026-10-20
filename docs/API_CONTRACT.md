@@ -1,3 +1,5 @@
+> **Legacy (v1, OpenStreetMap).** Still served by the backend; the current UI uses [API_V2.md](API_V2.md).
+
 # Frozen contract — QalaGo AI v1
 
 Do not change existing field names during parallel development. Add optional fields only after agreement.

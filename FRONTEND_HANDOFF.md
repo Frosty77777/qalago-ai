@@ -1,3 +1,5 @@
+> **Superseded.** This describes the legacy OSM `/api/recommend` integration. The current UI uses `/api/plan` (2GIS), see [docs/API_V2.md](docs/API_V2.md).
+
 # Participant B integration handoff — frozen v1
 
 Backend: `http://localhost:8000`. Swagger: `http://localhost:8000/docs`.

@@ -1,98 +1,35 @@
-import type { ApiMode, Language } from '../api/types'
+import type { IntentId, Language, Transport } from '../api/types'
 import type { LatLon } from './geo'
 
 export interface OriginPreset extends LatLon {
   id: string
-  osmId: string
   label: Record<Language, string>
 }
 
-// Coordinates are the OSM centroids of the named features, checked via Overpass on 2026-10-19.
-// They mark the area, not a specific entrance.
+// Centroids of the named areas (OSM, checked 2026-10-19). They mark an area, not an entrance.
 export const ORIGIN_PRESETS: OriginPreset[] = [
-  {
-    id: 'expo',
-    osmId: 'way/454853233',
-    lat: 51.09279,
-    lon: 71.42148,
-    label: { en: 'EXPO area', ru: 'Район EXPO', kk: 'EXPO маңы' },
-  },
-  {
-    id: 'baiterek',
-    osmId: 'way/230401645',
-    lat: 51.12829,
-    lon: 71.43045,
-    label: { en: 'Bayterek area', ru: 'Район Байтерека', kk: 'Бәйтерек маңы' },
-  },
+  { id: 'expo', lat: 51.09279, lon: 71.42148, label: { en: 'EXPO area', ru: 'Район EXPO', kk: 'EXPO маңы' } },
+  { id: 'baiterek', lat: 51.12829, lon: 71.43045, label: { en: 'Bayterek area', ru: 'Район Байтерека', kk: 'Бәйтерек маңы' } },
   {
     id: 'embankment',
-    osmId: 'way/263517343',
     lat: 51.16032,
     lon: 71.41879,
-    label: { en: 'Esil embankment (Seruen bridge)', ru: 'Набережная Есиля (мост Серуен)', kk: 'Есіл жағалауы (Серуен көпірі)' },
+    label: { en: 'Esil embankment', ru: 'Набережная Есиля', kk: 'Есіл жағалауы' },
   },
 ]
 
-export type ModeId = 'walk' | 'family' | 'friends' | 'date' | 'solo'
+export const TRANSPORTS: Transport[] = ['walking', 'public_transport', 'bicycle', 'driving']
 
-/** UI mode presets. Each maps to a real API mode plus preferences that change retrieval. */
-export const MODES: Record<ModeId, { api: ApiMode; preferences: string[] }> = {
-  walk: { api: 'walk', preferences: ['walk', 'park', 'architecture'] },
-  family: { api: 'walk', preferences: ['family', 'children', 'playground', 'park', 'museum'] },
-  friends: { api: 'general', preferences: ['friends', 'cafe', 'attraction'] },
-  date: { api: 'walk', preferences: ['date', 'viewpoint', 'park', 'cafe'] },
-  solo: { api: 'general', preferences: ['solo', 'museum', 'library', 'cafe'] },
-}
-
-export const MODE_IDS = Object.keys(MODES) as ModeId[]
-
-export type ScenarioId = 'walk60' | 'coffee' | 'family' | 'tourist2h' | 'evening'
-
-export interface Scenario {
-  id: ScenarioId
-  minutes: number
-  mode: ModeId
-  extraPreferences: string[]
-  query: Record<Language, string>
-}
-
-export const SCENARIOS: Scenario[] = [
+/** Example requests. They are only filled into the query box; results always come from 2GIS. */
+export const EXAMPLES: { id: string; query: Record<Language, string> }[] = [
+  { id: 'coffee', query: { ru: 'Хочу кофе', kk: 'Кофе ішкім келеді', en: 'I want coffee' } },
+  { id: 'food', query: { ru: 'Хочу поесть', kk: 'Тамақ ішкім келеді', en: 'I want something to eat' } },
+  { id: 'park', query: { ru: 'Хочу погулять в парке', kk: 'Саябақта серуендегім келеді', en: 'I want to walk in a park' } },
+  { id: 'study', query: { ru: 'Тихое место, чтобы позаниматься', kk: 'Сабақ оқитын тыныш орын', en: 'Find a quiet place to study' } },
   {
-    id: 'walk60',
-    minutes: 60,
-    mode: 'walk',
-    extraPreferences: [],
-    query: { en: 'I want a 30–60 minute walk nearby', ru: 'Хочу прогуляться рядом 30–60 минут', kk: 'Жақын жерде 30–60 минут серуендегім келеді' },
-  },
-  {
-    id: 'coffee',
-    minutes: 45,
-    mode: 'solo',
-    extraPreferences: ['coffee', 'quiet'],
-    query: { en: 'A quiet coffee place nearby', ru: 'Тихое место для кофе рядом', kk: 'Жақын жердегі тыныш кофехана' },
-  },
-  {
-    id: 'family',
-    minutes: 120,
-    mode: 'family',
-    extraPreferences: [],
-    query: { en: 'Something to do with a child for 2 hours', ru: 'Чем заняться с ребёнком на 2 часа', kk: 'Баламен 2 сағат не істеуге болады' },
-  },
-  {
-    id: 'tourist2h',
-    minutes: 120,
-    mode: 'walk',
-    extraPreferences: ['sightseeing', 'landmark'],
-    query: { en: 'I am a tourist with 2 hours before my flight', ru: 'Я турист, у меня 2 часа до рейса', kk: 'Мен туристпін, рейске дейін 2 сағатым бар' },
-  },
-  {
-    id: 'evening',
-    minutes: 90,
-    mode: 'friends',
-    extraPreferences: ['evening', 'viewpoint', 'park'],
-    query: { en: 'An evening walk to explore the city', ru: 'Вечерняя прогулка по городу', kk: 'Қаланы аралайтын кешкі серуен' },
+    id: 'combo',
+    query: { ru: 'У меня два часа: кофе и прогулка', kk: 'Екі сағатым бар: кофе және серуен', en: 'I have two hours and want coffee and a walk' },
   },
 ]
 
-/** Queries mentioning a flight or airport get an explicit "travel time not included" notice (T04). */
-export const FLIGHT_PATTERN = /flight|airport|рейс|аэропорт|самол[её]т|әуежай|ұшақ/i
+export const INTENT_IDS: IntentId[] = ['coffee', 'food', 'park', 'museum', 'sights', 'study', 'kids']

@@ -1,0 +1,43 @@
+# Portable production stack: nginx (UI + /api proxy) in front of the FastAPI backend.
+#   cp .env.example .env   # fill in keys
+#   docker compose up -d --build
+# TLS must be terminated in front of the `web` port; see docs/DEPLOYMENT.md.
+name: qalago
+
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      APP_DB_PATH: /var/lib/qalago/app.sqlite3
+      POI_DB_PATH: /var/lib/qalago/pois.sqlite3
+      # nginx appends the client address to X-Forwarded-For; used for rate limiting only.
+      TRUST_PROXY_HEADERS: "true"
+    volumes:
+      - qalago-data:/var/lib/qalago
+    expose:
+      - "8000"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    restart: unless-stopped
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  # Accounts and sessions (SQLite) plus the rebuildable POI index. Back this up.
+  qalago-data:

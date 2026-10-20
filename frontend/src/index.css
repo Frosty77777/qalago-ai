@@ -40,7 +40,7 @@
   }
 }
 
-/* Leaflet markers (divIcon HTML) */
+/* 2GIS MapGL HtmlMarker content */
 .qg-origin {
   position: relative;
   width: 28px;
@@ -54,7 +54,8 @@
   background: rgb(251 191 36 / 0.35);
   animation: qg-pulse 2s ease-out infinite;
 }
-.qg-origin span {
+.qg-origin::after {
+  content: '';
   position: absolute;
   inset: 7px;
   border-radius: 9999px;
@@ -78,47 +79,55 @@
   }
 }
 
+/* Numbered stop of the selected route: a 36px badge with a tip at (18, 44). */
 .qg-stop {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  background: #075985;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 6px rgb(15 23 42 / 0.45);
-  color: #fff;
-  font: 800 14px/1 'Manrope Variable', sans-serif;
-}
-.qg-stop span {
-  transform: rotate(45deg);
-}
-.qg-stop--selected {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
   background: #0f172a;
+  border: 3px solid #fcd34d;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.45);
   color: #fcd34d;
-  border-color: #fcd34d;
-  font-size: 17px;
+  font: 800 15px/1 'Manrope Variable', sans-serif;
 }
-
-.leaflet-container {
-  font-family: var(--font-sans);
-  background: #e2e8f0;
+.qg-stop::after {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #fcd34d;
 }
-.leaflet-control-attribution {
-  font-size: 11px;
+/* Stops of the other options: tappable dots that select that option. */
+.qg-stop-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #64748b;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.4);
+  cursor: pointer;
+  padding: 0;
+}
+.qg-stop-dot::before {
+  /* Enlarge the touch target to ~40px without changing the visual size. */
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+.qg-stop-dot {
+  position: relative;
+}
+.qg-stop-dot:focus-visible {
+  outline: 3px solid #0369a1;
+  outline-offset: 2px;
 }
 
 /* Manrope has no Cyrillic-extended glyphs (ә, ғ, қ, ң, ө, ұ, ү, һ, і); use Inter for Kazakh headings. */
 :root:lang(kk) {
   --font-display: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
-}
-
-@media (max-width: 767px) {
-  .leaflet-top.leaflet-left .leaflet-control-attribution {
-    margin: 6px 0 0 6px;
-    border-radius: 6px;
-  }
 }

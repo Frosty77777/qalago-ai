@@ -1,104 +1,50 @@
 # QalaGo AI — frontend
 
-Map-first React app for short, source-grounded walks in Astana. Owner: Participant B.
-Talks to the backend only through the frozen contract in [`../docs/API_CONTRACT.md`](../docs/API_CONTRACT.md).
+A responsive, map-first web app: describe what you want, pick a starting point, compare up to three 2GIS routes, then ask for another one.
 
-**Stack:** Vite 8, React 19, TypeScript (strict), Tailwind CSS 4, React Leaflet 5 with OpenStreetMap tiles, Playwright.
+**Stack:** Vite 8, React 19, TypeScript (strict), Tailwind CSS 4, 2GIS MapGL JS (via `@2gis/mapgl`, pinned), Google Identity Services, Playwright.
 
 ## Run
 
-Requires Node.js 20+ (tested with Node 24). The backend should be running on `http://localhost:8000`.
-
-PowerShell (Windows):
-
-```powershell
-cd frontend
-npm install
-Copy-Item .env.example .env.local
-npm run dev            # http://localhost:5173
-```
-
-POSIX (macOS/Linux):
+Requires Node.js 20+. Start the backend first (see `../backend/README.md`).
 
 ```sh
-cd frontend
-npm install
-cp .env.example .env.local
-npm run dev            # http://localhost:5173
+npm ci
+npm run dev            # http://localhost:5173; /api is proxied to http://127.0.0.1:8000
 ```
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server on port 5173 |
-| `npm run build` | Type-check (`tsc -b`, strict) and production build to `dist/` |
-| `npm run preview` | Serve the production build |
+| `npm run dev` | Dev server with the `/api` proxy (`QALAGO_BACKEND` overrides the target) |
+| `npm run build` | Strict type-check and production build to `dist/` |
+| `npm run preview` | Serve the production build (same `/api` proxy) |
 | `npm run lint` | oxlint |
-| `npm run test:e2e` | Playwright smoke tests (starts the dev server itself; backend is stubbed) |
-| `npm run test:live` | Playwright tests against the **real** backend on :8000 (start it first) |
-| `npm run fixture` | Re-collect the demo snapshot from Overpass into `src/mocks/demoPois.json` |
+| `npm run test:e2e` | Playwright on desktop, Pixel 7 and iPhone SE viewports; API, MapGL and Google are stubbed |
+| `npm run test:live` | Playwright against the real backend and real 2GIS (uses API quota) |
 
-### Environment
+### Configuration
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend base URL |
-| `VITE_USE_MOCKS` | `false` | `true` forces demo data (see below) |
+The UI gets the public 2GIS map key and Google client ID **at runtime** from `GET /api/config`. Nothing provider-related is baked into the bundle. The only build-time variable is `VITE_API_BASE_URL`: leave it empty for same-origin setups (dev proxy, production nginx), or set it to the backend origin for a split deployment, which also needs `CORS_ORIGINS` on the backend and cross-site cookies.
 
-Every `VITE_*` value ends up in the public JS bundle. **Never put `GEMINI_API_KEY` or any secret here**; Gemini is called only by the backend.
-
-## Demo data (mocks)
-
-`src/mocks/` holds the only fallback data in the app:
-
-- `demoPois.json` is a real OpenStreetMap snapshot (58 named places around EXPO and Bayterek, collected by `scripts/fetch-demo-fixture.mjs`, with OSM IDs, source URLs and the Overpass timestamp).
-- `mockApi.ts` ranks those places deterministically and fills `reason`/`activity` with templates marked `[Demo template]`. It never parses opening hours, so availability is always `unknown`, and walking time is always `null`.
-
-Demo data is used only when `VITE_USE_MOCKS=true` or when the user clicks **Use demo data instead** on a backend error. Either way the header shows a magenta **Demo data** badge and an explanation banner. The app never switches silently.
-
-## What the UI guarantees
-
-- Origins: browser geolocation only after a click, a click anywhere on the map, or three checked presets (OSM centroids, verified via Overpass on 2026-10-19):
-  EXPO `way/454853233`, Bayterek `way/230401645`, Esil embankment / Seruen footbridge `way/263517343`.
-- Distances are always labelled "as the crow flies" (`distance_m` is Haversine).
-- A green "Open now (verified)" badge appears **only** for `availability_status = verified_open`; everything else shows "Hours not verified".
-- Walking time is displayed only when `walk_minutes` *and* `walk_time_source` are present.
-- With `route: null` (the current backend) results are shown as **visit options**: no order, no connecting line, with a time-budget bar. If a later backend returns `route.ordered_poi_ids`, the UI switches to an ordered mini-itinerary with a dashed schematic line labelled "not walking routes"; a non-approximate `route.geometry` (GeoJSON LineString) is drawn solid.
-- Source facts (`facts`, OSM hours, source link) are visually separated from generated text (`reason`, `activity`, marked "AI suggestion").
-- Scenario notices: flight/airport queries warn that airport travel isn't included (T04); quiet/outlet queries warn those attributes aren't guaranteed (T02); evening queries remind that hours aren't verified (T05).
-- Mode presets (walk, family, friends, date, solo) change the request's `mode` and `preferences`, not just the visuals. Re-plan buttons send real new requests.
-- Share links carry the query, duration, mode, language and *preset* origin only, never coordinates.
-- Language (RU/KK/EN) is stored in `localStorage`; location never is. Switching language re-runs the last request so generated text follows.
-- OSM attribution is always visible (moves to the top on mobile so the bottom sheet can't cover it). No tile prefetching or offline maps.
-
-## Tests
-
-`tests/smoke.spec.ts` stubs the backend with `page.route` (responses built from the real snapshot) and blocks real tile requests. It covers: initial load and attribution, the full search flow and contract request body, map-click origin, geolocation declined, 0 results, backend unreachable plus the explicit demo switch, 422 details, all three languages plus persistence, scenario notices and mode preferences, verified-open badge logic, re-plan requests, share-link privacy, and the 375 px mobile layout.
-
-The tests use the locally installed Google Chrome (`channel: 'chrome'`). For bundled Chromium instead:
-
-```sh
-npx playwright install chromium
-PW_CHANNEL= npm run test:e2e          # POSIX
-$env:PW_CHANNEL=''; npm run test:e2e  # PowerShell
-```
-
-## Screenshots for slides / submission
-
-1. Start the backend, then `npm run dev`.
-2. Desktop: browser at 1440×900. Choose **EXPO area** → **30–60 min walk**, wait for the pins, then click card 2 to show the selected marker.
-3. Mobile: DevTools device toolbar, 375 px wide (e.g. iPhone SE). Choose **Bayterek area** → **Family activity**, then tap **Show on map**.
-4. Repeat one view in Қазақша and Русский for the multilingual slide.
-5. Make sure the "Demo data" badge is **not** visible when capturing live results.
+Every `VITE_*` value is public. Never put a secret there.
 
 ## Structure
 
-```
-src/
-  api/        contract types + fetch client (timeouts, retries on network/502–504, 422 details)
-  mocks/      demo snapshot + deterministic demo recommender (isolated, always labelled)
-  i18n/       ru/kk/en strings, category names, provider
-  lib/        geo (Haversine, formatting), presets (origins/scenarios/modes), share links
-  components/ MapView, SearchForm, ResultsPanel, ResultCard, Itinerary
-scripts/      fetch-demo-fixture.mjs (Overpass → demo snapshot)
-tests/        Playwright smoke tests
-```
+| Path | Role |
+|---|---|
+| `src/App.tsx` | State: origin, request, results, selection, "Another route" history, mobile sheet |
+| `src/components/MapView.tsx` | 2GIS MapGL: route lines (selected one highlighted), stop markers, origin, fit-to-route, resize handling |
+| `src/components/RouteCard.tsx` | Route option: stops, 2GIS travel time and distance, mode, hours, rating, explanation, select button |
+| `src/components/ResultsPanel.tsx` | Loading, clarify, empty, exhausted, routing-unavailable and error states |
+| `src/components/SearchForm.tsx` | Query and examples, origin (location / address search / presets / map tap), time, travel mode |
+| `src/components/AuthControl.tsx` | "Continue with Google" button, One Tap, account menu, sign-out |
+| `src/lib/routeHistory.ts` | Bounded set of shown route signatures (30) and when a request counts as "changed" |
+
+## Behaviour guarantees
+
+- **Map ↔ cards.** Selecting a card highlights its line and fits it into view. Tapping another route's line or stop on the map selects that card.
+- **Another route.** The request carries `seen` (bounded to 30) and `exclude` (the route on screen). The button is disabled while loading, so no duplicate requests go out. History resets when the query, origin, time, travel mode or answered category changes. When nothing new remains, the current routes stay on screen with an explanation and next steps.
+- **Honesty.** Travel time and distance come from 2GIS. Time at stops is labelled an estimate. Hours, ratings and prices come only from 2GIS, otherwise "unknown". If routing is unavailable, the real places are shown "without routes" with straight-line distance only.
+- **Mobile.** Bottom sheet (peek/half/full) whose handle shows the selected route. The sheet expands when the query field is focused, so the input stays above the keyboard. Touch targets are at least 40 px, there's no horizontal overflow, and the map resizes with the layout. The 2GIS copyright moves to the top so the sheet can't hide it.
+- **Location.** Requested only on tap. If denied, the app explains and offers address search, presets and map taps.
+- **Sign-in.** Optional. The Google ID token goes to the backend, which verifies it and sets an HttpOnly session cookie. The session is restored with `/api/auth/me`.

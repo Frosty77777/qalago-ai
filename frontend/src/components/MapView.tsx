@@ -1,189 +1,201 @@
-import L from 'leaflet'
-import { useEffect, useMemo } from 'react'
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet'
-import type { Poi, Recommendation, Route } from '../api/types'
+import { load } from '@2gis/mapgl'
+import { useEffect, useRef, useState } from 'react'
+import type { Language, Place, RouteOption } from '../api/types'
 import { useI18n } from '../i18n/I18nContext'
 import { ASTANA_CENTER, type LatLon } from '../lib/geo'
 
+type MapGL = Awaited<ReturnType<typeof load>>
+type MapInstance = InstanceType<MapGL['Map']>
+interface Destroyable {
+  destroy(): void
+}
+
 interface Props {
+  /** Browser key for 2GIS MapGL (public, domain-restricted). Null = map not configured. */
+  mapKey: string | null
+  lang: Language
   origin: LatLon | null
-  recommendations: Recommendation[]
-  route: Route | null
+  options: RouteOption[]
+  /** Places shown without routes when routing is unavailable. */
+  places: Place[]
   selectedId: string | null
-  backgroundPois: Poi[]
   onMapClick: (p: LatLon) => void
-  onSelect: (id: string) => void
-  /** Extra bottom padding (px) when fitting bounds, so a mobile bottom sheet does not hide markers. */
+  onSelect: (optionId: string) => void
+  /** Pixels hidden by the mobile bottom sheet; kept free when fitting a route into view. */
   bottomInset: number
-  /** On mobile the bottom sheet covers the map's bottom edge, so attribution moves to the top. */
-  attributionTop: boolean
+  /** The 2GIS copyright must stay visible: on mobile the bottom edge is under the sheet. */
+  copyrightTop: boolean
 }
 
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c)
-}
-
-const originIcon = (label: string) =>
-  L.divIcon({
-    className: '',
-    html: `<div class="qg-origin" role="img" aria-label="${escapeHtml(label)}"><span></span></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+// The official loader caches only after the script has loaded, so overlapping calls (React
+// StrictMode, quick remounts) would insert the 2GIS script twice. Share one promise instead.
+let mapglPromise: Promise<MapGL> | null = null
+function loadMapgl(): Promise<MapGL> {
+  mapglPromise ??= load().catch((err: unknown) => {
+    mapglPromise = null
+    throw err
   })
-
-const stopIcon = (n: number, selected: boolean, label: string) =>
-  L.divIcon({
-    className: '',
-    html: `<div class="qg-stop${selected ? ' qg-stop--selected' : ''}" role="img" aria-label="${escapeHtml(label)}"><span>${n}</span></div>`,
-    iconSize: selected ? [42, 42] : [34, 34],
-    // The pin is a square rotated 45°, so its tip sits half a diagonal below the centre.
-    iconAnchor: selected ? [21, 51] : [17, 41],
-  })
-
-function ClickHandler({ onMapClick }: { onMapClick: (p: LatLon) => void }) {
-  useMapEvents({ click: (e) => onMapClick({ lat: e.latlng.lat, lon: e.latlng.lng }) })
-  return null
+  return mapglPromise
 }
 
-function FitToResults({ origin, recommendations, bottomInset }: Pick<Props, 'origin' | 'recommendations' | 'bottomInset'>) {
-  const map = useMap()
+const SELECTED = '#0b5f86'
+const OTHER = '#64748b'
+
+function el(className: string, label: string, text = '', onClick?: () => void): HTMLElement {
+  const node = document.createElement(onClick ? 'button' : 'div')
+  node.className = className
+  node.setAttribute('aria-label', label)
+  node.title = label
+  if (onClick) {
+    ;(node as HTMLButtonElement).type = 'button'
+    node.addEventListener('click', (e) => {
+      e.stopPropagation()
+      onClick()
+    })
+  } else {
+    node.setAttribute('role', 'img')
+  }
+  if (text) node.textContent = text
+  return node
+}
+
+export function MapView({ mapKey, lang, origin, options, places, selectedId, onMapClick, onSelect, bottomInset, copyrightTop }: Props) {
+  const { t } = useI18n()
+  const container = useRef<HTMLDivElement | null>(null)
+  const mapRef = useRef<{ api: MapGL; map: MapInstance } | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const handlers = useRef({ onMapClick, onSelect })
   useEffect(() => {
-    if (!recommendations.length) return
-    const points: [number, number][] = recommendations.map((r) => [r.lat, r.lon])
-    if (origin) points.push([origin.lat, origin.lon])
-    map.flyToBounds(L.latLngBounds(points), { paddingTopLeft: [48, 48], paddingBottomRight: [48, 48 + bottomInset], maxZoom: 16, duration: 0.6 })
-    // Re-fit only when the result set changes, not on every inset or origin change.
-  }, [recommendations, map]) // oxlint-disable-line react-hooks/exhaustive-deps
-  return null
-}
+    handlers.current = { onMapClick, onSelect }
+  }, [onMapClick, onSelect])
 
-function FocusSelected({ selected }: { selected: Recommendation | undefined }) {
-  const map = useMap()
+  // Create the map once per key. MapGL is loaded from 2GIS's CDN by the official loader.
   useEffect(() => {
-    if (selected) map.flyTo([selected.lat, selected.lon], Math.max(map.getZoom(), 15), { duration: 0.5 })
-  }, [selected, map])
-  return null
-}
+    if (!mapKey || !container.current) return
+    let cancelled = false
+    let map: MapInstance | null = null
+    setState('loading')
+    loadMapgl()
+      .then((api) => {
+        if (cancelled || !container.current) return
+        map = new api.Map(container.current, {
+          center: [ASTANA_CENTER.lon, ASTANA_CENTER.lat],
+          zoom: 13,
+          key: mapKey,
+          lang,
+          zoomControl: 'topRight',
+          copyright: copyrightTop ? 'topLeft' : 'bottomLeft',
+        })
+        map.on('click', (e) => handlers.current.onMapClick({ lat: e.lngLat[1], lon: e.lngLat[0] }))
+        mapRef.current = { api, map }
+        setState('ready')
+      })
+      .catch(() => !cancelled && setState('failed'))
+    return () => {
+      cancelled = true
+      map?.destroy()
+      mapRef.current = null
+    }
+    // Language changes are applied below; the copyright corner is fixed per map instance.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapKey, copyrightTop])
 
-function PanToOrigin({ origin }: { origin: LatLon | null }) {
-  const map = useMap()
   useEffect(() => {
-    if (origin && !map.getBounds().pad(-0.1).contains([origin.lat, origin.lon])) map.panTo([origin.lat, origin.lon])
-  }, [origin, map])
-  return null
-}
+    if (state === 'ready') mapRef.current?.map.setLanguage(lang)
+  }, [lang, state])
 
-export function MapView({ origin, recommendations, route, selectedId, backgroundPois, onMapClick, onSelect, bottomInset, attributionTop }: Props) {
-  const { t, category } = useI18n()
+  // Keep the canvas in sync with layout changes (bottom sheet, rotation, desktop/mobile switch).
+  useEffect(() => {
+    const node = container.current
+    if (!node || state !== 'ready') return
+    const observer = new ResizeObserver(() => mapRef.current?.map.invalidateSize())
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [state])
 
-  const ordered = useMemo(() => {
-    if (!route?.ordered_poi_ids.length) return recommendations
-    const byId = new Map(recommendations.map((r) => [r.id, r]))
-    const inRoute = route.ordered_poi_ids.map((id) => byId.get(id)).filter((r): r is Recommendation => !!r)
-    return [...inRoute, ...recommendations.filter((r) => !route.ordered_poi_ids.includes(r.id))]
-  }, [recommendations, route])
+  // Draw routes and markers. Every option's line is shown; the selected one is highlighted.
+  useEffect(() => {
+    const ctx = mapRef.current
+    if (state !== 'ready' || !ctx) return
+    const { api, map } = ctx
+    const objects: Destroyable[] = []
+    for (const option of options) {
+      const selected = option.id === selectedId
+      const line = new api.Polyline(map, {
+        coordinates: option.geometry.coordinates,
+        width: selected ? 7 : 4,
+        color: selected ? SELECTED : OTHER,
+        width2: selected ? 11 : 6,
+        color2: '#ffffff',
+        zIndex: selected ? 30 : 10,
+      })
+      if (!selected) line.on('click', () => handlers.current.onSelect(option.id))
+      objects.push(line)
+      option.stops.forEach((stop, i) => {
+        const label = t('stopMarker', { n: i + 1, name: stop.name })
+        objects.push(
+          new api.HtmlMarker(map, {
+            coordinates: [stop.lon, stop.lat],
+            html: selected
+              ? el('qg-stop qg-stop--selected', label, String(i + 1))
+              : el('qg-stop-dot', label, '', () => handlers.current.onSelect(option.id)),
+            anchor: selected ? [18, 44] : [8, 8],
+            zIndex: selected ? 40 : 20,
+            interactive: !selected,
+          }),
+        )
+      })
+    }
+    places.forEach((place, i) => {
+      objects.push(
+        new api.HtmlMarker(map, {
+          coordinates: [place.lon, place.lat],
+          html: el('qg-stop', t('stopMarker', { n: i + 1, name: place.name }), String(i + 1)),
+          anchor: [18, 44],
+          zIndex: 40,
+        }),
+      )
+    })
+    if (origin) {
+      objects.push(
+        new api.HtmlMarker(map, { coordinates: [origin.lon, origin.lat], html: el('qg-origin', t('originMarker'), ''), anchor: [14, 14], zIndex: 50 }),
+      )
+    }
+    return () => objects.forEach((o) => o.destroy())
+  }, [state, options, places, selectedId, origin, t])
 
-  const resultIds = useMemo(() => new Set(recommendations.map((r) => r.id)), [recommendations])
+  // Fit the selected route (or unrouted places) and the origin into the visible part of the map.
+  const selected = options.find((o) => o.id === selectedId)
+  useEffect(() => {
+    const ctx = mapRef.current
+    const shown: [number, number][] = selected ? selected.geometry.coordinates : places.map((p) => [p.lon, p.lat])
+    if (state !== 'ready' || !ctx || !shown.length) return
+    const points = [...shown, ...(origin ? [[origin.lon, origin.lat] as [number, number]] : [])]
+    const lons = points.map((p) => p[0])
+    const lats = points.map((p) => p[1])
+    ctx.map.fitBounds(
+      { southWest: [Math.min(...lons), Math.min(...lats)], northEast: [Math.max(...lons), Math.max(...lats)] },
+      { padding: { top: 70, left: 40, right: 60, bottom: 40 + bottomInset }, maxZoom: 17 },
+    )
+    // Re-fit when the selection changes, not on every sheet resize.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, selected, places])
 
-  // A real routed geometry is drawn solid; otherwise only a schematic dashed connection.
-  const routedLine: [number, number][] | null =
-    route?.geometry && !route.is_approximate ? route.geometry.coordinates.map(([lon, lat]) => [lat, lon]) : null
-  const schematicLine: [number, number][] =
-    routedLine || !route || route.ordered_poi_ids.length < 2
-      ? []
-      : [...(origin ? [[origin.lat, origin.lon] as [number, number]] : []), ...ordered.map((r) => [r.lat, r.lon] as [number, number])]
+  // Without results, keep a newly chosen origin in view.
+  useEffect(() => {
+    const ctx = mapRef.current
+    if (state === 'ready' && ctx && origin && !options.length) ctx.map.setCenter([origin.lon, origin.lat])
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, origin])
 
   return (
-    <MapContainer
-      center={[ASTANA_CENTER.lat, ASTANA_CENTER.lon]}
-      zoom={13}
-      minZoom={10}
-      preferCanvas
-      className="h-full w-full"
-      aria-label={t('mapLabel')}
-      zoomControl={false}
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maxZoom={19}
-      />
-      <ZoomControlTopRight />
-      <AttributionPosition top={attributionTop} />
-      <ClickHandler onMapClick={onMapClick} />
-      <PanToOrigin origin={origin} />
-      <FitToResults origin={origin} recommendations={recommendations} bottomInset={bottomInset} />
-      <FocusSelected selected={recommendations.find((r) => r.id === selectedId)} />
-
-      {backgroundPois
-        .filter((p) => !resultIds.has(p.id))
-        .map((p) => (
-          <CircleMarker
-            key={p.id}
-            center={[p.lat, p.lon]}
-            radius={4}
-            pathOptions={{ color: '#ffffff', weight: 1, fillColor: '#64748b', fillOpacity: 0.75 }}
-            bubblingMouseEvents={false}
-          >
-            <Popup>
-              <strong>{p.name}</strong>
-              <br />
-              {category(p.category)}
-              <br />
-              <a href={p.source_url} target="_blank" rel="noreferrer">
-                OpenStreetMap
-              </a>
-            </Popup>
-          </CircleMarker>
-        ))}
-
-      {routedLine && <Polyline positions={routedLine} pathOptions={{ color: '#0b5f86', weight: 5, opacity: 0.85 }} attribution="Route &copy; 2GIS" />}
-      {schematicLine.length > 1 && (
-        <Polyline positions={schematicLine} pathOptions={{ color: '#0b5f86', weight: 3, opacity: 0.8, dashArray: '2 10', lineCap: 'round' }} />
+    <div className="relative h-full w-full bg-slate-200">
+      <div ref={container} className="h-full w-full" role="application" aria-label={t('mapLabel')} data-testid="map" data-map-state={mapKey ? state : 'nokey'} />
+      {(!mapKey || state === 'failed') && (
+        <div className="absolute inset-x-3 top-14 z-10 rounded-xl bg-white/95 p-3 text-sm text-slate-800 shadow ring-1 ring-slate-200 md:top-3" role="status" data-testid="map-unavailable">
+          {mapKey ? t('mapLoadFailed') : t('mapNoKey')}
+        </div>
       )}
-
-      {origin && (
-        <Marker position={[origin.lat, origin.lon]} icon={originIcon(t('originMarker'))} title={t('originMarker')} alt={t('originMarker')} zIndexOffset={500} keyboard={false} />
-      )}
-
-      {ordered.map((r, i) => {
-        const selected = r.id === selectedId
-        const label = `${t('stop', { n: i + 1 })}: ${r.name}`
-        return (
-          <Marker
-            key={r.id}
-            position={[r.lat, r.lon]}
-            icon={stopIcon(i + 1, selected, label)}
-            title={label}
-            alt={label}
-            zIndexOffset={selected ? 1000 : 600}
-            eventHandlers={{ click: () => onSelect(r.id) }}
-          >
-            <Tooltip direction="top" offset={[0, selected ? -50 : -40]} opacity={1}>
-              {r.name}
-            </Tooltip>
-          </Marker>
-        )
-      })}
-    </MapContainer>
+    </div>
   )
-}
-
-function AttributionPosition({ top }: { top: boolean }) {
-  const map = useMap()
-  useEffect(() => {
-    map.attributionControl?.setPosition(top ? 'topleft' : 'bottomright')
-  }, [map, top])
-  return null
-}
-
-function ZoomControlTopRight() {
-  const map = useMap()
-  useEffect(() => {
-    const ctl = L.control.zoom({ position: 'topright' }).addTo(map)
-    return () => {
-      ctl.remove()
-    }
-  }, [map])
-  return null
 }

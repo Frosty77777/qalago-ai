@@ -153,6 +153,8 @@ class HealthResponse(BaseModel):
     poi_count: int
     llm_enabled: bool
     dataset_updated_at: datetime | None
+    twogis_configured: bool = False
+    auth_enabled: bool = False
 
 
 def utc_now() -> datetime:

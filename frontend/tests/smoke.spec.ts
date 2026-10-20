@@ -1,340 +1,237 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
-import fixture from '../src/mocks/demoPois.json' with { type: 'json' }
+import { expect, test, type Page } from '@playwright/test'
+import { FIRST, paging, plan, SECOND, SELECTED_COLOR, stub } from './stubs'
 
-// The backend is stubbed with page.route. Response POIs are taken from the real OSM snapshot
-// in src/mocks/demoPois.json, so no invented places appear even in tests.
+// Deterministic UI tests: API, 2GIS MapGL and Google sign-in are stubbed (see stubs.ts).
 
-const API = 'http://localhost:8000'
-const TRANSPARENT_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
-const pois = fixture.pois
-const byName = (name: string) => {
-  const p = pois.find((x) => x.name === name)
-  if (!p) throw new Error(`fixture POI ${name} missing`)
-  return p
-}
-
-function rec(name: string, extra: Record<string, unknown> = {}) {
-  const p = byName(name)
-  return {
-    id: p.id,
-    name: p.name,
-    category: p.category,
-    lat: p.lat,
-    lon: p.lon,
-    distance_m: 640,
-    reason: `Reason for ${p.name}`,
-    visit_minutes: 25,
-    activity: `Activity at ${p.name}`,
-    opening_hours: p.opening_hours,
-    source: 'OpenStreetMap',
-    source_url: p.source_url,
-    facts: [`${p.category}`],
-    walk_minutes: null,
-    walk_time_source: null,
-    availability_status: 'unknown',
-    ...extra,
-  }
-}
-
-const threeStops = () => {
-  const recs = [rec('Президент саябағы'), rec('Starbucks'), rec('Бәйтерек')]
-  return {
-    recommendations: recs,
-    route: { ordered_poi_ids: recs.map((r) => r.id), geometry: null, route_minutes: null, is_approximate: true },
-    data_updated_at: '2026-10-19T16:43:20Z',
-    warnings: ['Walking time and opening hours were not independently verified'],
-    retrieval_debug: { matched_categories: ['park', 'cafe'] },
-  }
-}
-
-interface Stub {
-  recommend?: (body: Record<string, unknown>) => { status?: number; json: unknown } | 'abort'
-  down?: boolean
-}
-
-async function stubApi(page: Page, stub: Stub = {}) {
-  const requests: Record<string, unknown>[] = []
-  // Never fetch real OSM tiles from tests (tile usage policy); serve a 1x1 transparent PNG.
-  await page.route('https://tile.openstreetmap.org/**', (route) => route.fulfill({ contentType: 'image/png', body: TRANSPARENT_PNG }))
-  await page.route(`${API}/api/**`, async (route: Route) => {
-    if (stub.down) return route.abort('connectionrefused')
-    const url = new URL(route.request().url())
-    if (url.pathname === '/api/health')
-      return route.fulfill({ json: { status: 'ok', poi_count: pois.length, llm_enabled: true, dataset_updated_at: fixture.collected_at } })
-    if (url.pathname === '/api/pois') return route.fulfill({ json: pois })
-    if (url.pathname === '/api/recommend') {
-      const body = route.request().postDataJSON() as Record<string, unknown>
-      requests.push(body)
-      const res = stub.recommend ? stub.recommend(body) : { json: threeStops() }
-      if (res === 'abort') return route.abort('connectionrefused')
-      return route.fulfill({ status: res.status ?? 200, json: res.json })
-    }
-    return route.fulfill({ status: 404, json: { detail: 'not found' } })
-  })
-  return requests
-}
-
-async function setLang(page: Page, lang: 'en' | 'ru' | 'kk') {
-  // Seed only on the first load so reload tests can observe the app's own persistence.
-  await page.addInitScript((l) => {
-    if (!sessionStorage.getItem('qalago.seeded')) {
-      sessionStorage.setItem('qalago.seeded', '1')
-      localStorage.setItem('qalago.lang', l)
-    }
-  }, lang)
-}
-
-test.describe('QalaGo AI smoke', () => {
-  test('loads map, attribution, health and privacy note', async ({ page }) => {
-    await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await expect(page.locator('.leaflet-container')).toBeVisible()
-    await expect(page.locator('.leaflet-control-attribution')).toContainText('OpenStreetMap')
-    await expect(page.getByTestId('health-ok')).toContainText(`${pois.length} places`)
-    await expect(page.getByTestId('privacy-note')).toBeVisible()
-  })
-
-  test('search flow sends contract request and renders sourced cards + itinerary', async ({ page }) => {
-    const requests = await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('Walk with a coffee')
-    await page.getByTestId('search-submit').click()
-
-    await expect(page.getByTestId('result-card')).toHaveCount(3)
-    expect(requests[0]).toMatchObject({ query: 'Walk with a coffee', lat: 51.09279, lon: 71.42148, max_minutes: 60, language: 'en', mode: 'walk' })
-    expect(requests[0].preferences).toEqual(expect.arrayContaining(['walk']))
-
-    const first = page.getByTestId('result-card').first()
-    await expect(first).toContainText('as the crow flies')
-    await expect(first).toContainText('Hours not verified')
-    await expect(first.getByRole('link', { name: /Source: OpenStreetMap/ })).toHaveAttribute('href', /openstreetmap\.org\/(node|way|relation)\//)
-    await expect(page.getByText(/Open now/)).toHaveCount(0)
-    await expect(page.getByTestId('itinerary')).toContainText('They are not walking routes')
-    await expect(page.locator('.qg-stop')).toHaveCount(3)
-    await expect(page.locator('.qg-origin')).toHaveCount(1)
-
-    // Route selection: card button focuses the POI and highlights its marker.
-    await page.getByTestId('result-card').nth(1).getByRole('button', { name: 'Show on map' }).click()
-    await expect(page.getByTestId('result-card').nth(1)).toHaveAttribute('aria-current', 'true')
-    await expect(page.locator('.qg-stop--selected')).toHaveCount(1)
-  })
-
-  test('clicking the map sets a custom origin used in the request', async ({ page }) => {
-    const requests = await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    const map = page.locator('.leaflet-container')
-    const box = (await map.boundingBox())!
-    await page.mouse.click(box.x + box.width / 2 + 40, box.y + box.height / 2 + 30)
-    await expect(page.getByTestId('origin-status')).toContainText('Point picked on map')
-    await page.getByLabel('What would you like to do?').fill('park')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByTestId('result-card')).toHaveCount(3)
-    expect(Math.abs((requests[0].lat as number) - 51.128)).toBeLessThan(0.05)
-  })
-
-  test('declined geolocation shows guidance and presets still work', async ({ page }) => {
-    await stubApi(page)
-    await setLang(page, 'en')
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'geolocation', {
-        value: { getCurrentPosition: (_ok: unknown, fail: (e: object) => void) => fail({ code: 1, PERMISSION_DENIED: 1, message: 'denied' }) },
-      })
-    })
-    await page.goto('/')
-    await page.getByRole('button', { name: /Use my location/ }).click()
-    await expect(page.getByText('Location permission was declined')).toBeVisible()
-    await page.getByTestId('origin-baiterek').click()
-    await expect(page.getByTestId('origin-status')).toContainText('Bayterek area')
-  })
-
-  test('empty result shows next steps; "allow more time" re-queries', async ({ page }) => {
-    const requests = await stubApi(page, {
-      recommend: () => ({ json: { recommendations: [], route: null, data_updated_at: null, warnings: ['No places matched; try a larger radius'], retrieval_debug: null } }),
-    })
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('ice skating rink on the moon')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByTestId('empty-state')).toBeVisible()
-    await expect(page.getByTestId('warnings')).toContainText('No places matched')
-    await page.getByRole('button', { name: 'Allow more time' }).click()
-    await expect.poll(() => requests.length).toBe(2)
-    expect(requests[1].max_minutes).toBe(120)
-  })
-
-  test('unavailable API shows error with retry and explicit demo fallback', async ({ page }) => {
-    await stubApi(page, { down: true })
-    await setLang(page, 'en')
-    await page.goto('/')
-    await expect(page.getByTestId('health-down')).toBeVisible()
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('coffee')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByTestId('error-state')).toContainText('backend is unreachable')
-    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible()
-    await expect(page.getByTestId('demo-badge')).toHaveCount(0)
-
-    await page.getByTestId('use-demo').click()
-    await expect(page.getByTestId('demo-badge')).toBeVisible()
-    await expect(page.getByTestId('result-card').first()).toContainText('[Demo template]')
-  })
-
-  test('422 validation details are shown', async ({ page }) => {
-    await stubApi(page, { recommend: () => ({ status: 422, json: { detail: [{ loc: ['body', 'max_minutes'], msg: 'Input should be less than or equal to 240' }] } }) })
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('walk')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByTestId('error-state')).toContainText('max_minutes: Input should be less than or equal to 240')
-  })
-
-  test('three languages: UI switches, request re-sent in new language, choice persists', async ({ page }) => {
-    const requests = await stubApi(page)
-    await setLang(page, 'ru')
-    await page.goto('/')
-    await expect(page.getByTestId('search-submit')).toHaveText('Найти места')
-    await page.getByTestId('origin-expo').click()
-    await page.getByTestId('scenario-walk60').click()
-    await expect(page.getByTestId('result-card')).toHaveCount(3)
-    expect(requests[0]).toMatchObject({ language: 'ru', query: 'Хочу прогуляться рядом 30–60 минут' })
-
-    await page.getByTestId('lang-select').selectOption('kk')
-    await expect(page.getByTestId('search-submit')).toHaveText('Орындарды табу')
-    await expect.poll(() => requests.length).toBe(2)
-    expect(requests[1]).toMatchObject({ language: 'kk', query: 'Жақын жерде 30–60 минут серуендегім келеді' })
-    await expect(page.locator('html')).toHaveAttribute('lang', 'kk')
-
-    await page.getByTestId('lang-select').selectOption('en')
-    await expect(page.getByTestId('search-submit')).toHaveText('Find places')
-    await expect.poll(() => requests.length).toBe(3)
-    expect(requests[2].language).toBe('en')
-
-    await page.reload()
-    await expect(page.getByTestId('search-submit')).toHaveText('Find places')
-  })
-
-  test('scenario notices: flight, quiet coffee; family preset changes preferences', async ({ page }) => {
-    const requests = await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-baiterek').click()
-
-    await page.getByTestId('scenario-tourist2h').click()
-    await expect(page.getByTestId('notice-flightNotice')).toBeVisible()
-    expect(requests[0].max_minutes).toBe(120)
-
-    await page.getByTestId('scenario-coffee').click()
-    await expect(page.getByTestId('notice-quietNotice')).toBeVisible()
-
-    await page.getByTestId('scenario-family').click()
-    await expect.poll(() => requests.length).toBe(3)
-    expect(requests[2].preferences).toEqual(expect.arrayContaining(['family', 'playground']))
-  })
-
-  test('only verified_open shows an open badge', async ({ page }) => {
-    await stubApi(page, {
-      recommend: () => {
-        const r = threeStops()
-        r.recommendations[1] = rec('Starbucks', { availability_status: 'verified_open' })
-        return { json: r }
-      },
-    })
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('coffee')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByText('Open now (verified)')).toHaveCount(1)
-    await expect(page.getByText('Hours not verified')).toHaveCount(2)
-  })
-
-  test('routed response (2GIS) shows walking legs, total time and attribution', async ({ page }) => {
-    await stubApi(page, {
-      recommend: () => {
-        const r = threeStops()
-        const recs = r.recommendations.map((x, i) => ({ ...x, walk_minutes: 6 + i, walk_time_source: '2GIS Routing API (walking)' }))
-        const line = recs.map((x) => [x.lon, x.lat])
-        return {
-          json: {
-            ...r,
-            recommendations: recs,
-            route: { ordered_poi_ids: recs.map((x) => x.id), geometry: { type: 'LineString', coordinates: line }, route_minutes: 21, is_approximate: false },
-          },
-        }
-      },
-    })
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('walk')
-    await page.getByTestId('search-submit').click()
-    const it = page.getByTestId('itinerary')
-    await expect(it).toContainText('Walking route')
-    await expect(it.getByTestId('walk-leg')).toHaveCount(3)
-    await expect(page.getByTestId('itinerary-total')).toHaveText('Total ~96 of 60 min')
-    await expect(it).toContainText('© 2GIS')
-    await expect(it).not.toContainText('not walking routes')
-    await expect(page.getByTestId('result-card').first()).toContainText('6 min walk · 2GIS Routing API (walking)')
-  })
-
-  test('re-plan buttons send real new queries', async ({ page }) => {
-    const requests = await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('walk')
-    await page.getByTestId('search-submit').click()
-    await expect(page.getByTestId('result-card')).toHaveCount(3)
-    await page.getByTestId('replan-indoors').click()
-    await expect.poll(() => requests.length).toBe(2)
-    expect(requests[1].preferences).toEqual(expect.arrayContaining(['indoors', 'museum']))
-    await page.getByTestId('replan-shorter').click()
-    await expect.poll(() => requests.length).toBe(3)
-    expect(requests[2].max_minutes).toBe(30)
-  })
-
-  test('share link never contains coordinates', async ({ page, context }) => {
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await page.getByTestId('origin-expo').click()
-    await page.getByLabel('What would you like to do?').fill('walk')
-    await page.getByTestId('search-submit').click()
-    await page.getByRole('button', { name: 'Copy share link' }).click()
-    await expect(page.getByRole('button', { name: 'Link copied' })).toBeVisible()
-    const url = await page.evaluate(() => navigator.clipboard.readText())
-    expect(url).toContain('origin=expo')
-    expect(url).not.toMatch(/51\.\d|71\.\d|lat=|lon=/)
-  })
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('qalago.lang', 'ru'))
 })
 
-test.describe('mobile 375px', () => {
-  test.use({ viewport: { width: 375, height: 740 }, isMobile: true, hasTouch: true })
+async function openPanel(page: Page) {
+  const sheet = page.getByTestId('bottom-sheet')
+  if (await sheet.isVisible()) {
+    if ((await sheet.getAttribute('data-state')) !== 'full') await page.getByTestId('sheet-handle').click()
+    if ((await sheet.getAttribute('data-state')) !== 'full') await page.getByTestId('sheet-handle').click()
+  }
+}
 
-  test('bottom sheet layout, reachable controls, no horizontal scroll', async ({ page }) => {
-    await stubApi(page)
-    await setLang(page, 'en')
-    await page.goto('/')
-    await expect(page.getByTestId('bottom-sheet')).toBeVisible()
-    await page.getByTestId('origin-expo').tap()
-    await page.getByLabel('What would you like to do?').fill('walk')
-    await page.getByTestId('search-submit').scrollIntoViewIfNeeded()
-    await page.getByTestId('search-submit').tap()
-    await expect(page.getByTestId('result-card')).toHaveCount(3)
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-    expect(overflow).toBeLessThanOrEqual(0)
+async function searchCoffee(page: Page) {
+  await page.goto('/')
+  await openPanel(page)
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('route-card')).toHaveCount(3)
+}
 
-    const showOnMap = page.getByTestId('result-card').first().getByRole('button', { name: 'Show on map' })
-    await showOnMap.scrollIntoViewIfNeeded()
-    await showOnMap.tap()
-    await expect(page.getByTestId('bottom-sheet')).toHaveAttribute('data-state', 'peek')
-    await expect(page.locator('.qg-stop--selected')).toBeVisible()
+const mapState = (page: Page) =>
+  page.evaluate(() => {
+    const m = (window as unknown as { __map?: { polylines: { o: { color: string; coordinates: number[][] } }[]; fits: number; resizes: number; copyright: string } }).__map
+    if (!m) return { lines: [], fits: 0, resizes: 0, copyright: null }
+    return { lines: m.polylines.map((p) => p.o), fits: m.fits, resizes: m.resizes, copyright: m.copyright }
   })
+
+test('"Хочу кофе" shows ranked route cards and keeps map selection in sync', async ({ page }) => {
+  const rec = await stub(page)
+  await searchCoffee(page)
+  expect(rec.plan[0]).toMatchObject({ query: 'Хочу кофе', language: 'ru', transport: 'walking', max_minutes: 60 })
+  expect(rec.plan[0].seen).toBeUndefined()
+
+  const cards = page.getByTestId('route-card')
+  await expect(cards.first()).toHaveAttribute('aria-current', 'true')
+  await expect(cards.first()).toContainText('Test Coffee One')
+  await expect(cards.first().getByTestId('travel')).toContainText('6 мин')
+  await expect(cards.first()).toContainText('Открыто до 22:00')
+  await expect(cards.first()).toContainText('≈20 мин на месте (оценка)')
+
+  await expect.poll(async () => (await mapState(page)).lines.length).toBe(3)
+  const highlighted = () => mapState(page).then((s) => s.lines.filter((l) => l.color === SELECTED_COLOR).map((l) => l.coordinates))
+  await expect.poll(highlighted).toEqual([FIRST[0].geometry.coordinates])
+
+  await cards.nth(1).getByTestId('select-route').click()
+  await expect(cards.nth(1)).toHaveAttribute('aria-current', 'true')
+  await expect(cards.first()).not.toHaveAttribute('aria-current', 'true')
+  await expect.poll(highlighted).toEqual([FIRST[1].geometry.coordinates])
+  expect((await mapState(page)).fits).toBeGreaterThanOrEqual(2)
+
+  // Selecting another route's stop marker on the map selects its card.
+  await page.getByRole('button', { name: 'Остановка 1: Test Coffee Three' }).click()
+  await expect(cards.nth(2)).toHaveAttribute('aria-current', 'true')
+  await expect.poll(highlighted).toEqual([FIRST[2].geometry.coordinates])
+})
+
+test('"Другой маршрут" sends history, shows unseen routes, then explains exhaustion', async ({ page }) => {
+  const rec = await stub(page, { plan: paging(400) })
+  await searchCoffee(page)
+  await page.getByTestId('route-card').nth(1).getByTestId('select-route').click()
+
+  const another = page.getByTestId('another-route')
+  await expect(another).toHaveText(/Другой маршрут/)
+  await another.click()
+  await expect(another).toBeDisabled()
+  await another.click({ force: true }) // A second click while loading must not send a request.
+  await expect(page.getByTestId('route-card')).toHaveCount(2)
+  expect(rec.plan).toHaveLength(2)
+  expect(rec.plan[1].seen).toEqual(FIRST.map((o) => o.id))
+  expect(rec.plan[1].exclude).toEqual([FIRST[1].id])
+  await expect(page.getByTestId('route-card').first()).toContainText('Test Coffee Four')
+  await expect(page.getByTestId('route-card').first()).toHaveAttribute('aria-current', 'true')
+
+  await page.getByTestId('another-route').click()
+  await expect(page.getByTestId('exhausted')).toContainText('Других маршрутов по этому запросу нет')
+  expect(rec.plan[2].seen).toEqual([...FIRST, ...SECOND].map((o) => o.id))
+  // Current routes stay visible; useful next steps are offered.
+  await expect(page.getByTestId('route-card')).toHaveCount(2)
+  await expect(page.getByTestId('suggestion-expand_radius')).toBeVisible()
+})
+
+test('changing the request resets the route history', async ({ page }) => {
+  const rec = await stub(page, { plan: paging() })
+  await searchCoffee(page)
+  await page.getByTestId('another-route').click()
+  await expect(page.getByTestId('route-card').first()).toContainText('Test Coffee Four')
+  await openPanel(page)
+  await page.getByTestId('transport-bicycle').click()
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('route-card').first()).toContainText('Test Coffee One')
+  await page.getByTestId('another-route').click()
+  await expect(page.getByTestId('route-card').first()).toContainText('Test Coffee Four')
+  expect(rec.plan.at(-1)).toMatchObject({ transport: 'bicycle', seen: FIRST.map((o) => o.id) })
+})
+
+test('ambiguous request asks a short question and uses the answer', async ({ page }) => {
+  const rec = await stub(page, {
+    plan: (body) =>
+      body.categories
+        ? { json: plan(FIRST) }
+        : { json: plan([], { status: 'clarify', question: 'Что вам хочется?', choices: ['coffee', 'park'], interpretation: null }) },
+  })
+  await page.goto('/')
+  await openPanel(page)
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Куда сходить?')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('clarify')).toContainText('Что вам хочется?')
+  await page.getByTestId('choice-coffee').click()
+  await expect(page.getByTestId('route-card')).toHaveCount(3)
+  expect(rec.plan[1].categories).toEqual(['coffee'])
+})
+
+test('provider failures are explained, never replaced with invented routes', async ({ page }) => {
+  await stub(page, { plan: () => ({ status: 502, json: { error: { kind: 'key_rejected', service: 'places' } } }) })
+  await page.goto('/')
+  await openPanel(page)
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('error-state')).toContainText('2GIS отклонил серверный ключ для сервиса «поиск мест»')
+  await expect(page.getByTestId('route-card')).toHaveCount(0)
+})
+
+test('routing outage shows the real places found without routes', async ({ page }) => {
+  const places = FIRST.map((o) => ({ ...o.stops[0], hours_status: 'open', straight_distance_m: 650 }))
+  await stub(page, {
+    plan: () => ({ json: plan([], { status: 'routing_unavailable', places, routing_error: { kind: 'rate_limited', service: 'routing' } }) }),
+  })
+  await page.goto('/')
+  await openPanel(page)
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('routing-unavailable')).toContainText('исчерпан лимит запросов маршрутов 2GIS')
+  await expect(page.getByTestId('place-card')).toHaveCount(3)
+  await expect(page.getByTestId('place-card').first()).toContainText('650 м по прямой')
+  await expect(page.getByTestId('another-route')).toHaveCount(0)
+})
+
+test('denied location falls back to manual origin and address search', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'geolocation', {
+      value: { getCurrentPosition: (_ok: unknown, fail: (e: object) => void) => fail({ code: 1, PERMISSION_DENIED: 1 }) },
+    })
+  })
+  const rec = await stub(page)
+  await page.goto('/')
+  await openPanel(page)
+  await page.getByRole('button', { name: 'Моё местоположение' }).click()
+  await expect(page.getByTestId('geo-denied')).toBeVisible()
+  await page.getByLabel('Найти адрес или место старта').fill('Test avenue 55')
+  await page.getByRole('button', { name: 'Найти', exact: true }).click()
+  await page.getByTestId('origin-results').getByRole('button').first().click()
+  await expect(page.getByTestId('origin-status')).toContainText('Test avenue 55')
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('route-card')).toHaveCount(3)
+  expect(rec.plan[0]).toMatchObject({ lat: 51.087, lon: 71.418 })
+})
+
+test('Google sign-in creates a session, restores it and signs out', async ({ page }) => {
+  const rec = await stub(page)
+  await page.goto('/')
+  await page.getByTestId('gsi-button').click()
+  await expect(page.getByTestId('account-button')).toBeVisible()
+  expect(rec.auth).toEqual([{ credential: 'header.payload.signature-from-test' }])
+  expect(await page.evaluate(() => (window as unknown as { __gsiPrompted?: boolean }).__gsiPrompted)).toBe(true)
+
+  await page.reload()
+  await expect(page.getByTestId('account-button')).toBeVisible()
+  await page.getByTestId('account-button').click()
+  await page.getByTestId('sign-out').click()
+  await expect(page.getByTestId('gsi-button')).toBeVisible()
+  expect(rec.logout).toBe(1)
+})
+
+test('without a 2GIS map key the map explains itself and search still works', async ({ page }) => {
+  await stub(page, { config: { twogis_map_key: null, google_client_id: null, places_enabled: true } })
+  await page.goto('/')
+  await expect(page.getByTestId('map-unavailable')).toContainText('TWOGIS_MAP_KEY')
+  await expect(page.getByTestId('sign-in')).toHaveCount(0)
+  await openPanel(page)
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('route-card')).toHaveCount(3)
+})
+
+test('mobile layout: no overflow, usable sheet, touch targets, map resizes', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'mobile only')
+  await stub(page, { plan: paging() })
+  await page.goto('/')
+  const sheet = page.getByTestId('bottom-sheet')
+  await expect(sheet).toHaveAttribute('data-state', 'half')
+  await expect.poll(async () => (await mapState(page)).copyright, { timeout: 15_000 }).toBe('topLeft')
+
+  await page.locator('#query').focus()
+  await expect(sheet).toHaveAttribute('data-state', 'full')
+  await page.getByTestId('origin-expo').click()
+  await page.locator('#query').fill('Хочу кофе')
+  await page.getByTestId('search-submit').click()
+  await expect(page.getByTestId('route-card')).toHaveCount(3)
+
+  for (const id of ['search-submit', 'another-route', 'sheet-handle', 'transport-walking']) {
+    const box = await page.getByTestId(id).first().boundingBox()
+    expect(box!.height, id).toBeGreaterThanOrEqual(40)
+  }
+  const resizesBefore = (await mapState(page)).resizes
+  await page.getByTestId('route-card').nth(1).getByTestId('select-route').click()
+  await expect(sheet).toHaveAttribute('data-state', 'peek')
+  await expect(page.getByTestId('sheet-handle')).toContainText('Test Coffee Two')
+  await expect.poll(async () => (await mapState(page)).resizes).toBeGreaterThanOrEqual(resizesBefore)
+
+  await page.getByTestId('sheet-handle').click()
+  await page.getByTestId('another-route').click()
+  await expect(page.getByTestId('route-card').first()).toContainText('Test Coffee Four')
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBe(0)
+})
+
+test('tapping the map sets the origin and names it', async ({ page }) => {
+  await stub(page)
+  await page.goto('/')
+  const map = page.getByTestId('map')
+  const box = (await map.boundingBox())!
+  await page.mouse.click(box.x + box.width - 30, box.y + 120)
+  await openPanel(page)
+  await expect(page.getByTestId('origin-status')).toContainText('Test street 99')
 })

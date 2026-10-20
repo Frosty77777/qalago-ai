@@ -1,22 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { API_BASE_URL, ApiError, getApi, MOCKS_FORCED } from './api/client'
-import type { Health, Language, Poi, RecommendRequest, RecommendResponse } from './api/types'
+import { api, ApiError } from './api/client'
+import type { GeocodeResult, IntentId, Language, PlanRequest, PlanResponse, PublicConfig, Suggestion, Transport, User } from './api/types'
+import { AuthControl } from './components/AuthControl'
 import { MapView } from './components/MapView'
-import { ResultsPanel, type ReplanKind } from './components/ResultsPanel'
+import { ResultsPanel } from './components/ResultsPanel'
 import { SearchForm, type OriginKind } from './components/SearchForm'
 import { useI18n } from './i18n/I18nContext'
 import { LANGUAGES, type StringKey } from './i18n/strings'
-import type { LatLon } from './lib/geo'
-import { FLIGHT_PATTERN, MODES, ORIGIN_PRESETS, SCENARIOS, type ModeId, type ScenarioId } from './lib/presets'
-import { readShareParams, buildShareUrl } from './lib/share'
+import { formatDistance, type LatLon } from './lib/geo'
+import { ORIGIN_PRESETS } from './lib/presets'
+import { remember, sameExploration, type ExplorationKey } from './lib/routeHistory'
+import { buildShareUrl, readShareParams } from './lib/share'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 type SheetState = 'peek' | 'half' | 'full'
-
-const QUIET_PATTERN = /quiet|outlet|socket|тих|розетк|тыныш/i
-const EVENING_PATTERN = /evening|night|вечер|ноч|кеш|түн/i
-const NATURE_PREFS = ['nature', 'park', 'garden']
-const INDOOR_PREFS = ['indoors', 'museum', 'library', 'cafe']
+type AnotherState = 'idle' | 'loading' | 'exhausted' | 'error'
 
 function useIsDesktop() {
   const query = '(min-width: 768px)'
@@ -30,88 +28,113 @@ function useIsDesktop() {
   return desktop
 }
 
-function noticesFor(req: RecommendRequest | null): StringKey[] {
-  if (!req) return []
-  const text = `${req.query} ${(req.preferences ?? []).join(' ')}`
-  const out: StringKey[] = []
-  if (FLIGHT_PATTERN.test(req.query)) out.push('flightNotice')
-  if (QUIET_PATTERN.test(text)) out.push('quietNotice')
-  if (EVENING_PATTERN.test(text)) out.push('eveningNotice')
-  return out
+function useViewportHeight() {
+  const [h, setH] = useState(() => window.innerHeight)
+  useEffect(() => {
+    const onResize = () => setH(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return h
 }
 
-const unique = (xs: string[]) => [...new Set(xs)]
+const keyOf = (r: PlanRequest): ExplorationKey => ({
+  query: r.query,
+  lat: r.lat,
+  lon: r.lon,
+  minutes: r.max_minutes,
+  transport: r.transport,
+  categories: r.categories ?? [],
+})
 
 export default function App() {
-  const { t, lang, setLang, category } = useI18n()
+  const { t, lang, setLang, locale } = useI18n()
   const isDesktop = useIsDesktop()
+  const viewportHeight = useViewportHeight()
   const shared = useMemo(() => readShareParams(window.location.search), [])
 
-  const [demoMode, setDemoMode] = useState(MOCKS_FORCED)
-  const api = useMemo(() => getApi(demoMode), [demoMode])
-
-  const [health, setHealth] = useState<{ state: 'checking' | 'ok' | 'down'; data?: Health }>({ state: 'checking' })
-  const [pois, setPois] = useState<Poi[]>([])
-  const [showLayer, setShowLayer] = useState(true)
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [config, setConfig] = useState<{ state: 'loading' | 'ok' | 'failed'; data?: PublicConfig }>({ state: 'loading' })
+  const [user, setUser] = useState<User | null>(null)
+  const [sessionRestored, setSessionRestored] = useState(false)
 
   const sharedPreset = ORIGIN_PRESETS.find((p) => p.id === shared.origin)
   const [origin, setOrigin] = useState<LatLon | null>(sharedPreset ? { lat: sharedPreset.lat, lon: sharedPreset.lon } : null)
   const [originKind, setOriginKind] = useState<OriginKind>(sharedPreset ? { kind: 'preset', id: sharedPreset.id } : null)
+  const [originName, setOriginName] = useState<string | null>(null)
   const [geoState, setGeoState] = useState<'idle' | 'locating' | 'denied' | 'unavailable'>('idle')
 
   const [query, setQuery] = useState(shared.query ?? '')
   const [minutes, setMinutes] = useState(shared.minutes ?? 60)
-  const [mode, setMode] = useState<ModeId>(shared.mode ?? 'walk')
-  const [extraPrefs, setExtraPrefs] = useState<string[]>([])
-  const [activeScenario, setActiveScenario] = useState<ScenarioId | null>(null)
+  const [transport, setTransport] = useState<Transport>(shared.transport ?? 'walking')
   const [formError, setFormError] = useState<StringKey | null>(null)
 
   const [status, setStatus] = useState<Status>('idle')
-  const [response, setResponse] = useState<RecommendResponse | null>(null)
+  const [response, setResponse] = useState<PlanResponse | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [lastRequest, setLastRequest] = useState<RecommendRequest | null>(null)
+  const [lastRequest, setLastRequest] = useState<PlanRequest | null>(null)
+  const [anotherState, setAnotherState] = useState<AnotherState>('idle')
+  const [anotherError, setAnotherError] = useState<ApiError | null>(null)
   const [sheet, setSheet] = useState<SheetState>('half')
 
+  // Bounded history of route signatures shown for the current exploration.
+  const seenRef = useRef<string[]>([])
+  const explorationRef = useRef<ExplorationKey | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const queryRef = useRef<HTMLDivElement | null>(null)
   const resultsRef = useRef<HTMLElement | null>(null)
 
-  // Bring new results (or an error) into view inside the scrolling panel.
+  const loadConfig = useCallback(() => {
+    setConfig({ state: 'loading' })
+    api
+      .config()
+      .then((data) => setConfig({ state: 'ok', data }))
+      .catch(() => setConfig({ state: 'failed' }))
+  }, [])
+
+  useEffect(() => {
+    loadConfig()
+    api
+      .me()
+      .then((res) => setUser(res.user))
+      .catch(() => setUser(null))
+      .finally(() => setSessionRestored(true))
+  }, [loadConfig])
+
   useEffect(() => {
     if (status === 'success' || status === 'error') resultsRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }, [status, response])
 
-  // Backend health + collected POIs for the background layer.
-  useEffect(() => {
-    const ctl = new AbortController()
-    setHealth({ state: 'checking' })
-    api
-      .health(ctl.signal)
-      .then((data) => setHealth({ state: 'ok', data }))
-      .catch(() => !ctl.signal.aborted && setHealth({ state: 'down' }))
-    api
-      .pois(ctl.signal)
-      .then((list) => setPois(Array.isArray(list) ? list.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon)) : []))
-      .catch(() => !ctl.signal.aborted && setPois([]))
-    return () => ctl.abort()
-  }, [api])
+  const accept = useCallback((req: PlanRequest, res: PlanResponse) => {
+    const key = keyOf(req)
+    if (!sameExploration(explorationRef.current, key)) seenRef.current = []
+    explorationRef.current = key
+    seenRef.current = remember(
+      seenRef.current,
+      res.options.map((o) => o.id),
+    )
+    setResponse(res)
+    setSelectedId(res.options[0]?.id ?? null)
+  }, [])
 
+  /** A fresh search. With `withHistory`, already-shown routes are excluded (used by "search a wider area"). */
   const run = useCallback(
-    async (req: RecommendRequest) => {
+    async (req: PlanRequest, withHistory = false) => {
       abortRef.current?.abort()
       const ctl = new AbortController()
       abortRef.current = ctl
+      const sendHistory = withHistory && sameExploration(explorationRef.current, keyOf(req))
+      const body: PlanRequest = sendHistory ? { ...req, seen: seenRef.current, exclude: selectedId ? [selectedId] : [] } : req
       setLastRequest(req)
       setStatus('loading')
       setError(null)
-      setSelectedId(null)
+      setAnotherState('idle')
       if (!isDesktop) setSheet('half')
       try {
-        const res = await api.recommend(req, ctl.signal)
+        const res = await api.plan(body, ctl.signal)
         if (ctl.signal.aborted) return
-        setResponse(res)
+        accept(req, res)
+        if (sendHistory && res.status === 'exhausted') setAnotherState('exhausted')
         setStatus('success')
       } catch (err) {
         if (ctl.signal.aborted) return
@@ -119,12 +142,38 @@ export default function App() {
         setStatus('error')
       }
     },
-    [api, isDesktop],
+    [accept, isDesktop, selectedId],
   )
 
+  const another = useCallback(async () => {
+    if (!lastRequest || !response || anotherState === 'loading') return
+    setAnotherState('loading')
+    setAnotherError(null)
+    const ctl = new AbortController()
+    abortRef.current?.abort()
+    abortRef.current = ctl
+    try {
+      const res = await api.plan({ ...lastRequest, seen: seenRef.current, exclude: selectedId ? [selectedId] : [] }, ctl.signal)
+      if (ctl.signal.aborted) return
+      if (res.status === 'ok' && res.options.length) {
+        accept(lastRequest, res)
+        setAnotherState('idle')
+        if (!isDesktop) setSheet('peek')
+      } else {
+        // Keep the current routes on screen and explain that nothing new remains.
+        setResponse((prev) => (prev ? { ...prev, suggestions: res.suggestions } : prev))
+        setAnotherState('exhausted')
+      }
+    } catch (err) {
+      if (ctl.signal.aborted) return
+      setAnotherError(err instanceof ApiError ? err : new ApiError('network', String(err)))
+      setAnotherState('error')
+    }
+  }, [accept, anotherState, isDesktop, lastRequest, response, selectedId])
+
   const buildRequest = useCallback(
-    (overrides: Partial<{ query: string; minutes: number; mode: ModeId; extra: string[]; language: Language }> = {}): RecommendRequest | null => {
-      const q = (overrides.query ?? query).trim()
+    (o: Partial<{ query: string; minutes: number; transport: Transport; language: Language; categories: IntentId[]; radius: number }> = {}) => {
+      const q = (o.query ?? query).trim()
       if (!origin) {
         setFormError('needOrigin')
         return null
@@ -134,26 +183,27 @@ export default function App() {
         return null
       }
       setFormError(null)
-      const m = overrides.mode ?? mode
-      return {
+      const req: PlanRequest = {
         query: q.slice(0, 500),
         lat: Number(origin.lat.toFixed(5)),
         lon: Number(origin.lon.toFixed(5)),
-        max_minutes: overrides.minutes ?? minutes,
-        language: overrides.language ?? lang,
-        mode: MODES[m].api,
-        preferences: unique([...MODES[m].preferences, ...(overrides.extra ?? extraPrefs)]),
+        max_minutes: o.minutes ?? minutes,
+        language: o.language ?? lang,
+        transport: o.transport ?? transport,
       }
+      if (o.categories?.length) req.categories = o.categories
+      if (o.radius) req.radius_level = o.radius
+      return req
     },
-    [query, origin, mode, minutes, lang, extraPrefs],
+    [query, origin, minutes, lang, transport],
   )
 
-  const submit = (overrides?: Parameters<typeof buildRequest>[0]) => {
-    const req = buildRequest(overrides)
+  const submit = (o?: Parameters<typeof buildRequest>[0]) => {
+    const req = buildRequest(o)
     if (req) void run(req)
   }
 
-  // Shared link with a preset origin and a query runs once on load.
+  // A shared link with a preset origin and a query runs once on load.
   const autoRan = useRef(false)
   useEffect(() => {
     if (autoRan.current || !sharedPreset || !shared.query) return
@@ -162,30 +212,14 @@ export default function App() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Switching language re-runs the last successful request so generated text matches the UI.
+  // Switching language re-runs the last request so explanations match the UI language.
   const prevLang = useRef(lang)
   useEffect(() => {
     if (prevLang.current === lang) return
-    const old = prevLang.current
     prevLang.current = lang
-    const scenario = SCENARIOS.find((s) => s.id === activeScenario)
-    if (scenario && query === scenario.query[old]) setQuery(scenario.query[lang])
-    if (lastRequest && status !== 'loading') {
-      const q = scenario && lastRequest.query === scenario.query[old] ? scenario.query[lang] : lastRequest.query
-      void run({ ...lastRequest, language: lang, query: q })
-    }
+    if (lastRequest && status === 'success') void run({ ...lastRequest, language: lang })
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [lang])
-
-  // Re-run after an explicit switch to demo data.
-  const pendingDemoRetry = useRef(false)
-  useEffect(() => {
-    if (pendingDemoRetry.current && lastRequest) {
-      pendingDemoRetry.current = false
-      void run(lastRequest)
-    }
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [api])
 
   const setPreset = (id: string) => {
     const p = ORIGIN_PRESETS.find((o) => o.id === id)
@@ -195,8 +229,14 @@ export default function App() {
     setFormError(null)
   }
 
+  const setAddress = (r: GeocodeResult) => {
+    setOrigin({ lat: r.lat, lon: r.lon })
+    setOriginKind({ kind: 'address', label: r.name })
+    setFormError(null)
+  }
+
   const locate = () => {
-    if (!('geolocation' in navigator)) {
+    if (!('geolocation' in navigator) || !window.isSecureContext) {
       setGeoState('unavailable')
       return
     }
@@ -213,47 +253,34 @@ export default function App() {
     )
   }
 
-  const onMapClick = useCallback((p: LatLon) => {
-    setOrigin(p)
-    setOriginKind({ kind: 'map' })
-    setFormError(null)
-  }, [])
+  const onMapClick = useCallback(
+    (p: LatLon) => {
+      setOrigin(p)
+      setOriginKind({ kind: 'map' })
+      setOriginName(null)
+      setFormError(null)
+      // Name the picked point for the user; failure just keeps the generic label.
+      api
+        .reverseGeocode(p.lat, p.lon, lang)
+        .then((r) => setOriginName(r.name))
+        .catch(() => undefined)
+    },
+    [lang],
+  )
 
-  const applyScenario = (id: ScenarioId) => {
-    const s = SCENARIOS.find((x) => x.id === id)
-    if (!s) return
-    setActiveScenario(id)
-    setQuery(s.query[lang])
-    setMinutes(s.minutes)
-    setMode(s.mode)
-    setExtraPrefs(s.extraPreferences)
-    submit({ query: s.query[lang], minutes: s.minutes, mode: s.mode, extra: s.extraPreferences })
-  }
-
-  const replan = (k: ReplanKind) => {
-    if (k === 'shorter') {
-      const m = Math.max(15, Math.round((minutes * 0.6) / 15) * 15)
-      setMinutes(m)
-      submit({ minutes: m })
-      return
-    }
-    const add = k === 'nature' ? NATURE_PREFS : INDOOR_PREFS
-    const remove = k === 'nature' ? INDOOR_PREFS : NATURE_PREFS
-    const extra = unique([...extraPrefs.filter((p) => !remove.includes(p)), ...add])
-    setExtraPrefs(extra)
-    submit({ extra })
-  }
-
-  const onEmptyAction = (a: 'longer' | 'origin' | 'rephrase') => {
-    if (a === 'longer') {
+  const onSuggestion = (s: Suggestion) => {
+    if (!lastRequest) return
+    if (s === 'expand_radius') {
+      void run({ ...lastRequest, radius_level: Math.min(2, (lastRequest.radius_level ?? 0) + 1) }, true)
+    } else if (s === 'longer_time') {
       const m = Math.min(240, minutes + 60)
       setMinutes(m)
       submit({ minutes: m })
-    } else if (a === 'origin') {
-      if (!isDesktop) setSheet('peek')
     } else {
-      setSheet(isDesktop ? sheet : 'full')
-      queryRef.current?.querySelector('textarea')?.focus()
+      if (!isDesktop) setSheet('full')
+      queryRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      const target = s === 'change_transport' ? '[data-testid^="transport-"]' : 'textarea'
+      queryRef.current?.querySelector<HTMLElement>(target)?.focus({ preventScroll: true })
     }
   }
 
@@ -261,7 +288,7 @@ export default function App() {
     const url = buildShareUrl(window.location, {
       query: lastRequest?.query ?? query,
       minutes,
-      mode,
+      transport,
       lang,
       origin: originKind?.kind === 'preset' ? originKind.id : undefined,
     })
@@ -274,44 +301,49 @@ export default function App() {
     }
   }
 
-  const originLabel =
-    originKind?.kind === 'preset'
-      ? (ORIGIN_PRESETS.find((p) => p.id === originKind.id)?.label[lang] ?? '')
-      : originKind?.kind === 'device'
-        ? t('originMine')
-        : t('originCustom')
+  const selectRoute = (id: string, from: 'card' | 'map') => {
+    setSelectedId(id)
+    if (!isDesktop) setSheet(from === 'card' ? 'peek' : 'half')
+  }
 
-  const categories = useMemo(() => [...new Set(pois.map((p) => p.category))].sort(), [pois])
-  const visiblePois = useMemo(
-    () => (showLayer ? pois.filter((p) => categoryFilter === 'all' || p.category === categoryFilter) : []),
-    [pois, showLayer, categoryFilter],
-  )
-
-  const sheetHeights: Record<SheetState, string> = { peek: '9.5rem', half: '55dvh', full: '90dvh' }
-  const bottomInset = isDesktop ? 0 : sheet === 'peek' ? 160 : sheet === 'half' ? Math.round(window.innerHeight * 0.55) : 0
+  const options = response?.options ?? []
+  const selected = options.find((o) => o.id === selectedId)
+  const sheetHeights: Record<SheetState, number> = { peek: 168, half: Math.round(viewportHeight * 0.55), full: Math.round(viewportHeight * 0.9) }
+  const bottomInset = isDesktop ? 0 : sheet === 'full' ? 0 : sheetHeights[sheet]
 
   const panel = (
     <div className="space-y-5">
+      {config.state === 'failed' && (
+        <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-950">
+          {t('error_network')}{' '}
+          <button type="button" className="font-semibold underline" onClick={loadConfig}>
+            {t('retry')}
+          </button>
+        </div>
+      )}
       <div ref={queryRef}>
         <SearchForm
           query={query}
           minutes={minutes}
-          mode={mode}
-          origin={originKind}
+          transport={transport}
+          origin={origin}
+          originKind={originKind}
+          originName={originName}
           geoState={geoState}
           loading={status === 'loading'}
           formError={formError}
-          activeScenario={activeScenario}
-          onQuery={(q) => {
-            setQuery(q)
-            setActiveScenario(null)
-          }}
+          onQuery={setQuery}
           onMinutes={setMinutes}
-          onMode={setMode}
+          onTransport={setTransport}
           onPreset={setPreset}
+          onAddress={setAddress}
           onLocate={locate}
-          onScenario={applyScenario}
+          onExample={(q) => {
+            setQuery(q)
+            submit({ query: q })
+          }}
           onSubmit={() => submit()}
+          onQueryFocus={() => !isDesktop && setSheet('full')}
         />
       </div>
       <section ref={resultsRef} aria-label={t('resultsTitle')} data-testid="results" className="scroll-mt-4">
@@ -319,73 +351,41 @@ export default function App() {
           status={status}
           response={response}
           error={error}
-          apiBaseUrl={API_BASE_URL}
           selectedId={selectedId}
-          budgetMinutes={lastRequest?.max_minutes ?? minutes}
-          originLabel={originLabel}
-          notices={noticesFor(lastRequest)}
-          canUseDemo={!demoMode}
-          onSelect={(id) => {
-            setSelectedId(id)
-            if (!isDesktop) setSheet('peek')
-          }}
+          anotherState={anotherState}
+          anotherError={anotherError}
+          onSelect={(id) => selectRoute(id, 'card')}
+          onAnother={() => void another()}
           onRetry={() => lastRequest && void run(lastRequest)}
-          onUseDemo={() => {
-            pendingDemoRetry.current = true
-            setDemoMode(true)
-          }}
-          onReplan={replan}
+          onChoice={(c) => submit({ categories: [c] })}
+          onSuggestion={onSuggestion}
           onShare={share}
-          onEmptyAction={onEmptyAction}
-          onEditSearch={() => {
-            if (!isDesktop) setSheet('full')
-            queryRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-            queryRef.current?.querySelector('textarea')?.focus({ preventScroll: true })
-          }}
         />
       </section>
       <p className="text-xs leading-relaxed text-slate-500" data-testid="privacy-note">
         <span aria-hidden="true">🔒 </span>
         {t('privacy')}
+        {config.data?.google_client_id && !user && <> {t('authOptional')}</>}
       </p>
     </div>
   )
 
-  const healthPill =
-    health.state === 'checking' ? (
-      <span className="pill bg-slate-100 text-slate-600">{t('healthChecking')}</span>
-    ) : health.state === 'down' ? (
-      <span className="pill bg-rose-100 text-rose-900" data-testid="health-down">
-        {t('healthDown')}
-      </span>
-    ) : (
-      <span className="pill bg-emerald-50 text-emerald-900" data-testid="health-ok">
-        {t('healthPlaces', { n: health.data?.poi_count ?? 0 })} · {health.data?.llm_enabled ? t('healthAiOn') : t('healthAiOff')}
-      </span>
-    )
-
   return (
-    <div className="flex h-dvh flex-col bg-slate-50 text-slate-900">
+    <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900">
       <a href="#panel" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[2000] focus:rounded-lg focus:bg-white focus:px-3 focus:py-2">
-        {t('queryLabel')}
+        {t('skipToPanel')}
       </a>
-      <header className="z-[1100] flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+      <header className="z-[1100] flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 sm:gap-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-xl bg-slate-900 font-display text-lg font-extrabold text-amber-300">
             Q
           </span>
           <div className="min-w-0">
             <h1 className="font-display text-lg leading-tight font-extrabold tracking-tight whitespace-nowrap">{t('appName')}</h1>
-            <p className="hidden truncate text-xs text-slate-500 sm:block">{t('tagline')}</p>
+            <p className="hidden truncate text-xs text-slate-500 lg:block">{t('tagline')}</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {demoMode && (
-            <span className="pill bg-fuchsia-600 text-white" title={t('demoExplain')} data-testid="demo-badge">
-              {t('demoBadge')}
-            </span>
-          )}
-          <span className="hidden lg:inline-flex">{healthPill}</span>
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           <label className="sr-only" htmlFor="lang">
             {t('languageLabel')}
           </label>
@@ -402,21 +402,18 @@ export default function App() {
               </option>
             ))}
           </select>
+          <AuthControl
+            clientId={config.data?.google_client_id ?? null}
+            user={user}
+            restored={sessionRestored}
+            lang={lang}
+            compact={!isDesktop}
+            onUser={setUser}
+          />
         </div>
       </header>
 
-      {demoMode && (
-        <div className="z-[1100] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-fuchsia-50 px-4 py-1.5 text-xs text-fuchsia-950" role="status">
-          <span>{t('demoExplain')}</span>
-          {!MOCKS_FORCED && (
-            <button type="button" className="font-semibold underline" onClick={() => setDemoMode(false)}>
-              {t('leaveDemo')}
-            </button>
-          )}
-        </div>
-      )}
-
-      <main className="relative min-h-0 flex-1 md:grid md:grid-cols-[minmax(380px,440px)_1fr]">
+      <main className="relative min-h-0 flex-1 md:grid md:grid-cols-[minmax(380px,460px)_1fr]">
         {isDesktop && (
           <aside id="panel" className="min-h-0 overflow-y-auto border-r border-slate-200 bg-slate-50 p-5">
             {panel}
@@ -424,69 +421,51 @@ export default function App() {
         )}
 
         <div className="absolute inset-0 md:relative">
-          <MapView
-            origin={origin}
-            recommendations={response?.recommendations ?? []}
-            route={response?.route ?? null}
-            selectedId={selectedId}
-            backgroundPois={visiblePois}
-            onMapClick={onMapClick}
-            onSelect={(id) => {
-              setSelectedId(id)
-              if (!isDesktop) setSheet('half')
-            }}
-            bottomInset={bottomInset}
-            attributionTop={!isDesktop}
-          />
-          <div className="pointer-events-none absolute top-10 left-3 z-[1000] flex max-w-[calc(100%-5rem)] flex-wrap gap-2 md:top-3">
-            <label className="pointer-events-auto flex items-center gap-2 rounded-lg bg-white/95 px-2.5 py-1.5 text-xs font-medium shadow ring-1 ring-slate-200">
-              <input type="checkbox" checked={showLayer} onChange={(e) => setShowLayer(e.target.checked)} className="accent-sky-800" />
-              {t('layerAll')}
-            </label>
-            {showLayer && categories.length > 1 && (
-              <select
-                aria-label={t('categoryFilter')}
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="pointer-events-auto rounded-lg bg-white/95 px-2 py-1.5 text-xs font-medium shadow ring-1 ring-slate-200"
-              >
-                <option value="all">{t('allCategories')}</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {category(c)}
-                  </option>
-                ))}
-              </select>
-            )}
-            {!isDesktop && <span className="pointer-events-auto">{healthPill}</span>}
-          </div>
+          {config.state !== 'loading' && (
+            <MapView
+              mapKey={config.data?.twogis_map_key ?? null}
+              lang={lang}
+              origin={origin}
+              options={options}
+              places={response?.places ?? []}
+              selectedId={selectedId}
+              onMapClick={onMapClick}
+              onSelect={(id) => selectRoute(id, 'map')}
+              bottomInset={bottomInset}
+              copyrightTop={!isDesktop}
+            />
+          )}
         </div>
 
         {!isDesktop && (
           <section
             id="panel"
-            className="absolute inset-x-0 bottom-0 z-[1050] flex flex-col rounded-t-3xl bg-slate-50 shadow-[0_-8px_30px_rgba(15,23,42,0.18)] transition-[height] duration-300"
-            style={{ height: sheetHeights[sheet] }}
+            className="absolute inset-x-0 bottom-0 z-[1050] flex flex-col rounded-t-3xl bg-slate-50 shadow-[0_-8px_30px_rgba(15,23,42,0.18)] transition-[height] duration-300 motion-reduce:transition-none"
+            style={{ height: sheetHeights[sheet], paddingBottom: 'env(safe-area-inset-bottom)' }}
             data-testid="bottom-sheet"
             data-state={sheet}
           >
             <button
               type="button"
-              className="flex shrink-0 flex-col items-center gap-1 px-4 pt-2 pb-1"
+              className="flex min-h-12 shrink-0 flex-col items-center gap-1 px-4 pt-2 pb-1"
               onClick={() => setSheet(sheet === 'full' ? 'peek' : sheet === 'peek' ? 'half' : 'full')}
               aria-label={sheet === 'full' ? t('collapseSheet') : t('expandSheet')}
               aria-expanded={sheet !== 'peek'}
+              aria-controls="panel-content"
+              data-testid="sheet-handle"
             >
               <span aria-hidden="true" className="h-1.5 w-12 rounded-full bg-slate-300" />
-              <span className="text-xs font-semibold text-slate-600">
-                {status === 'success' && response?.recommendations.length
-                  ? t('resultsCount', { n: response.recommendations.length })
+              <span className="max-w-full truncate text-xs font-semibold text-slate-700">
+                {selected
+                  ? `${selected.title} · ${t('travelValue', { n: selected.travel_minutes, d: formatDistance(selected.travel_distance_m, locale) })}`
                   : sheet === 'full'
                     ? t('showMap')
                     : t('showResults')}
               </span>
             </button>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">{panel}</div>
+            <div id="panel-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
+              {panel}
+            </div>
           </section>
         )}
       </main>

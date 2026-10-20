@@ -1,37 +1,36 @@
 # Limitations, ethics and privacy
 
-Participant B wrote the frontend sections. Participant A should complete or correct the backend sections.
+## Data (2GIS)
 
-## Data
-- **Coverage and freshness.** POIs come from OpenStreetMap, which volunteers edit. Places can be missing, misnamed, closed or out of date. Each result shows its OSM link and the dataset timestamp.
-- **Centroids, not entrances.** Area and building coordinates are Overpass `center` points. Map pins and demo origins mark the *area*, not a door or entrance.
-- **Opening hours.** Many places have no `opening_hours` tag. The UI shows "Hours not verified" unless the backend explicitly returns `verified_open` or `verified_closed`.
-- **Attributes we can't verify.** Quietness, power outlets, prices, ratings, crowds, events and accessibility are usually absent from OSM. The app never states them unless a source tag supports it, and quiet/outlet requests show an explicit notice.
-- **Licensing.** OSM data is under ODbL and requires attribution, which stays visible on the map at all times. Tiles come from the OSMF servers, which are meant for low-volume interactive use. A production launch would need its own tile provider.
+- **Coverage and freshness.** Places, rubrics, schedules, ratings and attributes come from the 2GIS directory at query time. A place can be missing, mislabelled or out of date. Every place links to its 2GIS page.
+- **Opening hours.** "Open on arrival" means the 2GIS weekly schedule covers the estimated arrival time in the place's time zone. Holidays and temporary closures may not be reflected. A missing schedule is shown as "Hours unknown" and never as open. Places listed as closed when you'd arrive are excluded.
+- **Attributes we can't verify.** Quietness has no 2GIS data and is never claimed; a notice says so. Price uses the 2GIS "average check" attribute when present. Accessibility and "laptop-friendly" are shown only as the 2GIS attribute label. Unknown values are labelled unknown and score neutrally.
+- **Category matching.** A 2GIS text hit counts only when its rubric confirms the category, so a bar named "Bibliotheca" isn't a library. Kazakh-language requests are searched in Russian rubrics, since 2GIS has no English locale for Kazakhstan, and display names come from 2GIS.
 
-## Distances and time
-- `distance_m` is a straight-line (Haversine) distance. The UI always labels it "as the crow flies".
-- Walking times and route lines come from the **2GIS Routing API** (pedestrian) when `TWOGIS_API_KEY` is set on the backend. Stops are ordered nearest-first (greedy, not an optimal tour), the return trip is not included, and trailing stops that would overrun the time budget are dropped. Without the key, or if 2GIS fails, the app falls back to unrouted visit options, and the UI reads "Walking time not estimated".
-- With routing, the time budget counts 2GIS walking minutes plus visit minutes. Without routing it counts visit minutes only, and users are told to leave a margin for travel. Airport travel and check-in are never included (T04).
-- Card distances stay straight-line even when routed; the walking time next to them is the 2GIS figure.
+## Routes and time
 
-## AI-generated text
-- `reason` and `activity` are generated suggestions, grounded in retrieved POIs and marked "AI suggestion". Source facts appear in a separate "Source data" block.
-- *(Backend)* Gemini sees only retrieved POIs, and returned IDs are whitelisted. Names and coordinates always come from the database. If Gemini fails, a deterministic fallback is used. → Participant A: link the tests that prove this.
-- The "Why these places?" panel shows server retrieval details, never hidden model reasoning.
+- Travel time, distance and geometry come from 2GIS Routing (walking, car, bike) or the 2GIS Public Transport API. Nothing is estimated locally.
+- Multi-stop routes visit stops nearest-first. This is a heuristic, not an optimal tour. The return trip isn't included.
+- Time at each stop is an **assumption** (for example 20 min for coffee, 30 min for a park) and is labelled "estimate". It shrinks when the budget is tight, to at least 5 min per stop.
+- The search radius comes from the time budget and travel mode (40% of the budget at a conservative speed). It sizes the search area only and is never shown as an ETA.
+- Car routes use 2GIS traffic data at the time of the request. Alternative paths are offered only when 2GIS returns materially different geometry.
+- If 2GIS routing is unavailable (quota, key, outage), the app shows the real places it found with straight-line distance and says routing is unavailable. It never draws a substitute line.
 
-## Demo data
-- The frontend ships one isolated demo dataset, a real OSM snapshot from 2026-10-19 with template texts. It is used only on explicit request (`VITE_USE_MOCKS=true` or a button on the error screen) and is always badged **Demo data**. It doesn't parse opening hours and doesn't estimate walking time.
+## AI use
+
+- Intent parsing is rule-based and tested. Gemini, if configured, is consulted only when the rules find nothing. Its output is limited to a fixed category list, and a place name it returns must literally appear in the user's text.
+- Explanations are deterministic templates filled with 2GIS facts. They are not model prose, so they stay consistent with the ranking.
 
 ## Privacy
-- Geolocation is requested only when the user clicks **Use my location**. Clicking the map and the three area presets work without it.
-- Coordinates are sent with the recommendation request only (rounded to 5 decimals, about 1 m). The frontend never stores them. Only the UI language is kept in `localStorage`.
-- With routing enabled, the backend sends the origin **rounded to 4 decimals (about 11 m)** and the stop coordinates to 2GIS to compute walking routes. Gemini still never receives coordinates. The 2GIS key stays server-side in `backend/.env`.
-- Share links contain the query, duration, mode, language and a *preset* area ID, never coordinates.
-- No API keys exist in the frontend. Gemini is called server-side only.
-- *(Backend)* No coordinates or full query text in server logs. → Participant A to confirm.
 
-## Not built (honest scope)
-- No live weather, user accounts, reviews or photos. Routing is pedestrian only and needs a 2GIS key.
-- No offline maps or tile caching.
-- Business model and partnerships are ideas only. There is no traction or partner agreement.
+- Geolocation is requested only when the user taps **Use my location**.
+- Origin coordinates go to the backend with a search and are not stored. The backend rounds the origin to about 11 m before sending it to 2GIS Routing. The Places search sends the origin to 2GIS to search nearby. Gemini never receives coordinates.
+- Server logs contain only status codes, latency and error kinds. They never contain queries, coordinates, tokens or keys, and nginx doesn't log `/api` requests.
+- Accounts store the Google `sub`, plus the verified email, display name and avatar URL. Sessions are stored as SHA-256 hashes. There's no search history per user.
+- Share links contain the query, time, mode, language and a preset area ID, never coordinates.
+
+## Not built
+
+- No offline mode; search and routing always need the network.
+- No saved routes or history per account yet. Sign-in only creates and restores the account.
+- Rate limits and SQLite assume a single backend instance (see DEPLOYMENT.md, "Scaling").

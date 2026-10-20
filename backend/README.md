@@ -1,6 +1,10 @@
 # QalaGo AI backend
 
-Python 3.12 + FastAPI/Pydantic v2. Automatically harvested OpenStreetMap POIs, deterministic multilingual TF-IDF/category/distance retrieval, and optional grounded Gemini selection. Owns only `backend/`; frozen contract and timeline copies are in `docs/`.
+Python 3.12 + FastAPI/Pydantic v2.
+
+**Current API (v2): [`../docs/API_V2.md`](../docs/API_V2.md).** `POST /api/plan` turns a natural-language request into real 2GIS places and 2GIS routes (`app/intent.py`, `app/planner.py`, `app/providers/twogis.py`). Google sign-in and sessions live in `app/auth.py` and `app/db.py`. Configuration and deployment: [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
+
+The sections below describe the **legacy v1** OSM pipeline (`/api/recommend`, `/api/pois`), which is still served.
 
 ## Quick start — Windows PowerShell
 
